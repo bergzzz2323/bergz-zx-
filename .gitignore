@@ -1,0 +1,18 @@
+# Android / Gradle
+.gradle/
+build/
+local.properties
+.idea/
+*.iml
+.cxx/
+.externalNativeBuild/
+captures/
+
+# Desktop test renderer output
+tools/render_test
+tools/*.wav
+
+# Imported reference banks (SysEx from other instruments) are for local
+# testing only and must never be committed or shipped.
+reference-banks/
+*.syx

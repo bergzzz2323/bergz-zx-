@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="Theme.Bergz" parent="android:Theme.Material.NoActionBar">
+        <item name="android:windowBackground">@color/bergz_body</item>
+        <item name="android:statusBarColor">@color/bergz_body</item>
+        <item name="android:navigationBarColor">@color/bergz_body</item>
+        <item name="android:windowLayoutInDisplayCutoutMode">shortEdges</item>
+    </style>
+    <color name="bergz_body">#FF0D0915</color>
+    <color name="bergz_pink">#FFFF3DCB</color>
+    <color name="bergz_blue">#FF3DB8FF</color>
+</resources>
