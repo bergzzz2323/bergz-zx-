@@ -26,7 +26,7 @@ The app opens full-screen in landscape. Use headphones or a speaker for the bass
 | **SHIFT + MUTATE** | New melody on the same steps, locked to the scale |
 | **ALGO** | Cycle the FM algorithm (SHIFT + ALGO = change scale) |
 | **Knobs** | Drag up/down. Display shows the friendly + technical name |
-| **FX title** | Tap "FX · REVERB ▸" to switch Reverb / Delay / Phaser |
+| **FX title** | Tap "FX · REVERB ▸" to switch Reverb / Delay / Phaser. Double-tap for that effect's settings (Reverb: tone, width · Delay: time, tone, ping-pong · Phaser: depth, intensity) |
 | **REC** | Motion record: while it's lit, every knob you move is recorded into the loop and replays every bar. Overdub more knobs on later passes |
 | **CLEAR** | Erase all recorded motion |
 | **Scene A / B + fader** | Morph between two sound snapshots (SHIFT + A/B stores the current sound). Morphing while REC is lit records the morph |

@@ -2,6 +2,8 @@ package com.bergz.zx700.ui
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -51,11 +53,15 @@ fun PanelScreen(state: BergzState) {
     // Drive playhead, motion LEDs and knob positions from the engine every frame.
     LaunchedEffect(Unit) { while (true) { withFrameNanos { }; state.poll() } }
 
-    Column(
+    Box(
         Modifier
             .fillMaxSize()
             .background(Neon.Body)
-            .windowInsetsPadding(WindowInsets.displayCutout)  // keep controls clear of the camera
+            .windowInsetsPadding(WindowInsets.displayCutout),  // keep controls clear of the camera
+    ) {
+    Column(
+        Modifier
+            .fillMaxSize()
             .padding(horizontal = 14.dp, vertical = 8.dp),
         verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
@@ -72,6 +78,7 @@ fun PanelScreen(state: BergzState) {
                 "FX · ${NativeEngine.FX_NAMES[state.fxType]} ▸",
                 Modifier.weight(2.3f).fillMaxHeight(),
                 onTitleClick = { state.cycleFx() },
+                onTitleDoubleClick = { state.openFxSettings() },
             ) {
                 K(state, P.FX_MIX, Neon.Purple)
                 K(state, P.FX_PARAM, Neon.Purple, NativeEngine.FX_PARAM_NAMES[state.fxType])
@@ -92,6 +99,90 @@ fun PanelScreen(state: BergzState) {
         Row(Modifier.fillMaxWidth().weight(0.95f), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Transport(state, Modifier.width(214.dp).fillMaxHeight())
             Steps(state, Modifier.weight(1f).fillMaxHeight())
+        }
+    }
+    if (state.fxSettingsOpen) FxSettings(state)
+    }
+}
+
+/** Pop-up panel with the extra options for the active effect. The pattern keeps playing. */
+@Composable
+private fun FxSettings(state: BergzState) {
+    val shape = RoundedCornerShape(14.dp)
+    Box(
+        Modifier
+            .fillMaxSize()
+            .background(Color.Black.copy(alpha = 0.55f))
+            .clickable(remember { MutableInteractionSource() }, indication = null) { state.closeFxSettings() },
+        contentAlignment = Alignment.TopCenter,
+    ) {
+        Column(
+            Modifier
+                .padding(top = 36.dp)
+                .fillMaxWidth(0.66f)
+                .fillMaxHeight(0.6f)
+                .shadow(16.dp, shape, ambientColor = Neon.Pink, spotColor = Neon.Pink)
+                .background(Neon.Panel, shape)
+                .border(1.dp, Neon.Pink, shape)
+                // swallow taps so only the dimmed area outside closes the panel
+                .clickable(remember { MutableInteractionSource() }, indication = null) { }
+                .padding(horizontal = 16.dp, vertical = 10.dp),
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    "${NativeEngine.FX_NAMES[state.fxType]} · SETTINGS", color = Neon.Pink, fontSize = 13.sp,
+                    fontWeight = FontWeight.ExtraBold, letterSpacing = 2.sp,
+                    style = TextStyle(shadow = glow(Neon.Pink)), modifier = Modifier.weight(1f),
+                )
+                HwButton("", Modifier.width(76.dp), active = true, activeColor = Neon.Blue, height = 30.dp, caption = "DONE") {
+                    state.closeFxSettings()
+                }
+            }
+            Box(Modifier.fillMaxWidth().padding(vertical = 6.dp).height(1.dp).background(Neon.Line))
+            Row(
+                Modifier.fillMaxWidth().weight(1f),
+                horizontalArrangement = Arrangement.SpaceEvenly,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                when (state.fxType) {
+                    0 -> {  // reverb
+                        K(state, P.FX_MIX, Neon.Purple, size = 56)
+                        K(state, P.FX_PARAM, Neon.Purple, "SIZE", size = 56)
+                        K(state, P.REV_TONE, Neon.Blue, size = 56)
+                        K(state, P.REV_WIDTH, Neon.Blue, size = 56)
+                    }
+                    1 -> {  // delay
+                        K(state, P.FX_MIX, Neon.Purple, size = 52)
+                        K(state, P.FX_PARAM, Neon.Purple, "FEEDBACK", size = 52)
+                        K(state, P.DLY_TONE, Neon.Blue, size = 52)
+                        Column(Modifier.width(150.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            PanelLabel("TIME")
+                            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                NativeEngine.DELAY_TIMES.forEachIndexed { i, label ->
+                                    HwButton(
+                                        "", Modifier.weight(1f), active = state.delayTimeIndex == i,
+                                        activeColor = Neon.Blue, height = 32.dp, caption = label,
+                                    ) { state.setDelayTime(i) }
+                                }
+                            }
+                            HwButton(
+                                "", Modifier.fillMaxWidth(), active = state.params[P.DLY_PING] > 0.5f,
+                                activeColor = Neon.Pink, height = 32.dp, caption = "PING-PONG",
+                            ) { state.togglePingPong() }
+                        }
+                    }
+                    else -> {  // phaser
+                        K(state, P.FX_MIX, Neon.Purple, size = 56)
+                        K(state, P.FX_PARAM, Neon.Purple, "RATE", size = 56)
+                        K(state, P.PH_DEPTH, Neon.Blue, size = 56)
+                        K(state, P.PH_FEEDBACK, Neon.Blue, size = 56)
+                    }
+                }
+            }
+            Text(
+                "Tap the FX name to switch effect · double-tap for these settings",
+                color = Neon.Muted, fontSize = 9.sp,
+            )
         }
     }
 }

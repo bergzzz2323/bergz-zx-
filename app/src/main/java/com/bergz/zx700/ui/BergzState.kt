@@ -49,6 +49,7 @@ class BergzState {
         private set
     var morph by mutableFloatStateOf(0f)
         private set
+    var fxSettingsOpen by mutableStateOf(false)
 
     private var sceneA = FloatArray(P.MOTION_COUNT)
     private var sceneB = FloatArray(P.MOTION_COUNT)
@@ -72,7 +73,7 @@ class BergzState {
 
         val p = NativeEngine.nativePresetParams(i)
         val now = SystemClock.uptimeMillis()
-        for (k in 0 until P.COUNT) { params[k] = p[k]; localSetAt[k] = now }
+        for (k in 0 until P.PRESET_COUNT) { params[k] = p[k]; localSetAt[k] = now }
         val n = NativeEngine.nativePresetNotes(i)
         for (s in 0 until NativeEngine.STEPS)
             notes[s] = List(NativeEngine.NOTES_PER_STEP) { n[s * NativeEngine.NOTES_PER_STEP + it] }
@@ -178,6 +179,31 @@ class BergzState {
         NativeEngine.nativeSetParam(P.FX_TYPE, t.toFloat())
         edited = true
         message = "FX ${NativeEngine.FX_NAMES[t]}"
+    }
+
+    fun openFxSettings() {
+        fxSettingsOpen = true
+        message = "${NativeEngine.FX_NAMES[fxType]} SETTINGS"
+    }
+
+    fun closeFxSettings() { fxSettingsOpen = false }
+
+    fun setDelayTime(index: Int) {
+        val v = index / 3f
+        params[P.DLY_TIME] = v
+        localSetAt[P.DLY_TIME] = SystemClock.uptimeMillis()
+        NativeEngine.nativeSetParam(P.DLY_TIME, v)
+        message = "DELAY TIME ${NativeEngine.DELAY_TIMES[index]}"
+    }
+
+    val delayTimeIndex: Int get() = (params[P.DLY_TIME] * 3f).roundToInt().coerceIn(0, 3)
+
+    fun togglePingPong() {
+        val v = if (params[P.DLY_PING] > 0.5f) 0f else 1f
+        params[P.DLY_PING] = v
+        localSetAt[P.DLY_PING] = SystemClock.uptimeMillis()
+        NativeEngine.nativeSetParam(P.DLY_PING, v)
+        message = if (v > 0.5f) "PING-PONG ON" else "PING-PONG OFF"
     }
 
     fun toggleShift() { shift = !shift }

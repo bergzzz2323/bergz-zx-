@@ -5,6 +5,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
@@ -58,12 +59,13 @@ fun PanelLabel(text: String, color: Color = Neon.Dim, modifier: Modifier = Modif
     )
 }
 
-/** A neon-outlined panel section with a pink title. Tapping the title is optional. */
+/** A neon-outlined panel section with a pink title. Tap / double-tap on the title are optional. */
 @Composable
 fun Section(
     title: String,
     modifier: Modifier = Modifier,
     onTitleClick: (() -> Unit)? = null,
+    onTitleDoubleClick: (() -> Unit)? = null,
     content: @Composable RowScope.() -> Unit,
 ) {
     val shape = RoundedCornerShape(10.dp)
@@ -74,7 +76,18 @@ fun Section(
             .border(1.dp, Neon.Purple, shape)
             .padding(horizontal = 6.dp, vertical = 4.dp),
     ) {
-        val titleMod = if (onTitleClick != null) Modifier.clickable { onTitleClick() } else Modifier
+        val tapCb by rememberUpdatedState(onTitleClick)
+        val doubleCb by rememberUpdatedState(onTitleDoubleClick)
+        val titleMod = when {
+            onTitleDoubleClick != null -> Modifier.pointerInput(Unit) {
+                detectTapGestures(
+                    onTap = { tapCb?.invoke() },
+                    onDoubleTap = { doubleCb?.invoke() },
+                )
+            }
+            onTitleClick != null -> Modifier.clickable { onTitleClick() }
+            else -> Modifier
+        }
         Text(
             title, color = Neon.Pink, fontSize = 9.sp, fontWeight = FontWeight.ExtraBold,
             letterSpacing = 2.sp, maxLines = 1, modifier = titleMod.padding(bottom = 2.dp),

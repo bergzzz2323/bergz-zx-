@@ -96,7 +96,8 @@ template <typename Send>
 inline void loadPreset(const Preset& p, Send send) {
     send(Cmd{CMD_CLEAR_PATTERN, 0, 0, 0.f});
     send(Cmd{CMD_CLEAR_MOTION, -1, 0, 0.f});
-    for (int id = 0; id < P_COUNT; ++id) send(Cmd{CMD_PARAM, id, 0, p.params[id]});
+    // FX settings-panel params are left as the player set them.
+    for (int id = 0; id < kPresetParams; ++id) send(Cmd{CMD_PARAM, id, 0, p.params[id]});
     for (int s = 0; s < kSteps; ++s)
         for (int n = 0; n < kNotesPerStep; ++n)
             if (p.notes[s][n] >= 0) send(Cmd{CMD_STEP_NOTE, s, p.notes[s][n], (float)n});

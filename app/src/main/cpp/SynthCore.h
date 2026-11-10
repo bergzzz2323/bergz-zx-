@@ -32,8 +32,14 @@ enum Param : int {
     P_TEMPO,      // actual BPM, not 0..1
     P_ALGORITHM,  // 0 .. kAlgorithms-1
     P_FX_TYPE,    // 0 reverb, 1 delay, 2 phaser
+    // Per-effect settings (FX settings panel). Not part of presets.
+    P_REV_TONE, P_REV_WIDTH,
+    P_DLY_TIME,   // 0..1 -> 1/16, 1/8, dotted 1/8, 1/4
+    P_DLY_TONE, P_DLY_PING,
+    P_PH_DEPTH, P_PH_FEEDBACK,
     P_COUNT
 };
+constexpr int kPresetParams = P_REV_TONE;  // presets store everything before this
 enum FxType : int { FX_REVERB = 0, FX_DELAY = 1, FX_PHASER = 2, FX_COUNT };
 
 // Motion recording: knob moves are stored per parameter at 8 points per step.
@@ -314,13 +320,15 @@ struct Reverb {
             ar[j].buf.assign((size_t)((aps[j] + 23) * k), 0.f);
         }
     }
-    void process(float in, float size, float& outL, float& outR) {
+    void process(float in, float size, float tone, float width, float& outL, float& outR) {
         const float fb = 0.70f + 0.28f * size;
+        const float damp = 0.65f - 0.6f * tone;  // tone up = brighter tail
         const float x = in * 0.03f;
         float l = 0.f, r = 0.f;
-        for (int j = 0; j < 4; ++j) { l += cl[j].process(x, fb, 0.25f); r += cr[j].process(x, fb, 0.25f); }
+        for (int j = 0; j < 4; ++j) { l += cl[j].process(x, fb, damp); r += cr[j].process(x, fb, damp); }
         for (int j = 0; j < 2; ++j) { l = al[j].process(l); r = ar[j].process(r); }
-        outL = l; outR = r;
+        const float a = 0.5f + 0.5f * width, b = 0.5f - 0.5f * width;
+        outL = l * a + r * b; outR = r * a + l * b;
     }
 };
 
@@ -337,14 +345,16 @@ struct Phaser {
         const float t = std::tan(kPi * f / sr);
         return (1.f - t) / (1.f + t);
     }
-    void process(float in, float rate, float sr, float& outL, float& outR) {
+    void process(float in, float rate, float depth, float feedback, float sr, float& outL, float& outR) {
         lfo += (0.05f * std::pow(100.f, rate)) / sr;
         lfo -= std::floor(lfo);
         const float sl = 0.5f + 0.5f * std::sin(kTwoPi * lfo);
         const float sr2 = 0.5f + 0.5f * std::sin(kTwoPi * (lfo + 0.25f));
-        const float al = coef(200.f * std::pow(15.f, sl), sr);
-        const float ar = coef(200.f * std::pow(15.f, sr2), sr);
-        float l = in + fbl * 0.6f, r = in + fbr * 0.6f;
+        const float octaves = 1.f + 4.f * depth;
+        const float al = coef(200.f * std::pow(2.f, sl * octaves), sr);
+        const float ar = coef(200.f * std::pow(2.f, sr2 * octaves), sr);
+        const float fbAmt = 0.9f * feedback;
+        float l = in + fbl * fbAmt, r = in + fbr * fbAmt;
         for (int j = 0; j < 4; ++j) { l = stage(l, al, zl[j]); r = stage(r, ar, zr[j]); }
         fbl = l; fbr = r;
         outL = 0.5f * (in + l);
@@ -390,7 +400,11 @@ public:
         const int harmSet = std::min(kHarmSets - 1, (int)std::lround(p_[P_HARMONIC] * (kHarmSets - 1)));
         const double samplesPerStep = sr_ * 60.0 / (double)p_[P_TEMPO] / 4.0;
         const int gateSamples = std::max(1, (int)(samplesPerStep * 0.1 * std::pow(80.0, (double)p_[P_GATE])));
-        const size_t delaySamples = std::min(delayL_.size() - 1, (size_t)(samplesPerStep * 3.0));
+        static constexpr double kDelaySteps[4] = {1.0, 2.0, 3.0, 4.0};  // 1/16 1/8 d1/8 1/4
+        const int dIdx = std::max(0, std::min(3, (int)std::lround(p_[P_DLY_TIME] * 3.f)));
+        const size_t delaySamples = std::min(delayL_.size() - 1, (size_t)(samplesPerStep * kDelaySteps[dIdx]));
+        const float dlyCoef = 0.08f + 0.85f * p_[P_DLY_TONE];
+        const bool pingPong = p_[P_DLY_PING] > 0.5f;
         const float lfoInc = (0.05f * std::pow(400.f, p_[P_LFO_RATE])) / sr_;
         const int fx = fxType_;
 
@@ -438,7 +452,7 @@ public:
             float wl = 0.f, wr = 0.f, dryGain = 1.f;
             switch (fx) {
                 case FX_REVERB:
-                    reverb_.process(s, p_[P_FX_PARAM], wl, wr);
+                    reverb_.process(s, p_[P_FX_PARAM], p_[P_REV_TONE], p_[P_REV_WIDTH], wl, wr);
                     wl *= 2.5f * smMix_; wr *= 2.5f * smMix_;
                     dryGain = 1.f - 0.3f * smMix_;
                     break;
@@ -446,17 +460,24 @@ public:
                     const size_t rp = (delayPos_ + delayL_.size() - delaySamples) % delayL_.size();
                     const float dl = delayL_[rp], dr = delayR_[rp];
                     const float fb = p_[P_FX_PARAM] * 0.85f;
-                    dampL_ += 0.35f * (dr * fb - dampL_);
-                    dampR_ += 0.35f * (dl * fb - dampR_);
-                    delayL_[delayPos_] = s + dampL_ + 1e-20f;
-                    delayR_[delayPos_] = dampR_ + 1e-20f;
+                    if (pingPong) {  // bounce left/right
+                        dampL_ += dlyCoef * (dr * fb - dampL_);
+                        dampR_ += dlyCoef * (dl * fb - dampR_);
+                        delayL_[delayPos_] = s + dampL_ + 1e-20f;
+                        delayR_[delayPos_] = dampR_ + 1e-20f;
+                    } else {         // straight echoes, centred
+                        dampL_ += dlyCoef * (dl * fb - dampL_);
+                        dampR_ += dlyCoef * (dr * fb - dampR_);
+                        delayL_[delayPos_] = s + dampL_ + 1e-20f;
+                        delayR_[delayPos_] = s + dampR_ + 1e-20f;
+                    }
                     delayPos_ = (delayPos_ + 1) % delayL_.size();
                     wl = dl * smMix_; wr = dr * smMix_;
                     break;
                 }
                 case FX_PHASER: {
                     float pl, pr;
-                    phaser_.process(s, p_[P_FX_PARAM], sr_, pl, pr);
+                    phaser_.process(s, p_[P_FX_PARAM], p_[P_PH_DEPTH], p_[P_PH_FEEDBACK], sr_, pl, pr);
                     dryGain = 1.f - smMix_;
                     wl = pl * smMix_; wr = pr * smMix_;
                     break;
@@ -618,7 +639,10 @@ private:
         0.02f, 0.30f, 0.20f, 0.20f,  // A D S R
         0.30f, 0.15f,                // lfo rate, depth
         0.46f,                       // gate (~0.75 step)
-        120.f, 0.f, (float)FX_DELAY  // tempo, algorithm, fx type
+        120.f, 0.f, (float)FX_DELAY,  // tempo, algorithm, fx type
+        0.67f, 1.0f,                  // reverb tone, width
+        0.67f, 0.32f, 1.0f,           // delay time (dotted 1/8), tone, ping-pong
+        0.73f, 0.67f                  // phaser depth, intensity
     };
     int algorithm_ = 0;
     int fxType_ = FX_DELAY;

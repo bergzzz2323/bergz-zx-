@@ -43,6 +43,11 @@ val PARAM_NAMES: Map<Int, ParamName> = mapOf(
     P.LFO_RATE to ParamName("WOBBLE SPD", "LFO RATE"),
     P.LFO_DEPTH to ParamName("WOBBLE", "LFO DEPTH"),
     P.GATE to ParamName("LENGTH", "GATE"),
+    P.REV_TONE to ParamName("TONE", "REVERB TONE"),
+    P.REV_WIDTH to ParamName("WIDTH", "STEREO WIDTH"),
+    P.DLY_TONE to ParamName("TONE", "DELAY TONE"),
+    P.PH_DEPTH to ParamName("DEPTH", "SWEEP RANGE"),
+    P.PH_FEEDBACK to ParamName("INTENSITY", "PHASER FEEDBACK"),
 )
 
 data class Scale(val name: String, val intervals: List<Int>)

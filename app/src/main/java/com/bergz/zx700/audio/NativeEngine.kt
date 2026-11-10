@@ -15,7 +15,13 @@ object NativeEngine {
         const val ATTACK = 9; const val DECAY = 10; const val SUSTAIN = 11; const val RELEASE = 12
         const val LFO_RATE = 13; const val LFO_DEPTH = 14; const val GATE = 15
         const val TEMPO = 16; const val ALGORITHM = 17; const val FX_TYPE = 18
-        const val COUNT = 19
+        // FX settings panel
+        const val REV_TONE = 19; const val REV_WIDTH = 20
+        const val DLY_TIME = 21; const val DLY_TONE = 22; const val DLY_PING = 23
+        const val PH_DEPTH = 24; const val PH_FEEDBACK = 25
+        const val COUNT = 26
+        /** Presets store params below this id; FX panel settings are kept across patches. */
+        const val PRESET_COUNT = REV_TONE
         /** Params below this id can be motion-recorded. */
         const val MOTION_COUNT = TEMPO
     }
@@ -26,6 +32,7 @@ object NativeEngine {
     const val ALGORITHMS = 4
     val FX_NAMES = listOf("REVERB", "DELAY", "PHASER")
     val FX_PARAM_NAMES = listOf("SIZE", "FEEDBK", "RATE")
+    val DELAY_TIMES = listOf("1/16", "1/8", "1/8.", "1/4")
 
     external fun nativeStart(): Boolean
     external fun nativeStop()
