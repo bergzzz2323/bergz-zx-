@@ -2,6 +2,7 @@
 
 A landscape FM groove synth for Android, tuned for the Pixel 9.
 Native C++ FM engine on Oboe (low-latency audio), Jetpack Compose panel UI.
+Synth-only: the built-in drum machine is switched off so the focus stays on FM sounds.
 
 ## Install on your Pixel 9
 
@@ -30,8 +31,7 @@ The app opens full-screen in landscape. Use headphones or a speaker for the bass
 | **CLEAR** | Erase all recorded motion |
 | **Scene A / B + fader** | Morph between two sound snapshots (SHIFT + A/B stores the current sound). Morphing while REC is lit records the morph |
 | **Step keys** | Synth: tap empty = add note, tap again = select (pink edge), tap selected = remove |
-| **DATA wheel** | With a step selected: move its note through the scale. Otherwise: tempo |
-| **TRACK** | Cycle SYNTH ▸ KICK ▸ SNARE ▸ HAT ▸ CLAP, then the step keys edit that drum |
+| **DATA wheel** (bottom left) | With a step selected: move its note through the scale. Otherwise: tempo |
 
 Starter patches: Glass Bass, Neon Bleeps, Velvet Pad, Space Stabs, Chrome Bells, Dusk Choir.
 

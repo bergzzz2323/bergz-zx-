@@ -54,7 +54,5 @@ val SCALES = listOf(
     Scale("PENTA", listOf(0, 3, 5, 7, 10)),
 )
 
-val TRACK_NAMES = listOf("SYNTH", "KICK", "SNARE", "HAT", "CLAP")
-
 private val NOTE_NAMES = listOf("C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B")
 fun noteName(midi: Int): String = if (midi < 0) "--" else NOTE_NAMES[midi % 12] + (midi / 12 - 1)

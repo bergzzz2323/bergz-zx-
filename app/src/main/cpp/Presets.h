@@ -56,7 +56,7 @@ inline const std::vector<Preset>& presets() {
              {0, 4, 8, 12, 14}, {4, 12}, {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15}, {7, 15}),
 
         make("NEON BLEEPS",
-             {0.55f, 0.95f, 0.10f, 0.80f, 0.30f, 0.30f, 0.40f, 0.60f, 0.62f,
+             {0.55f, 0.95f, 0.10f, 0.80f, 0.30f, 0.30f, 0.40f, 0.60f, 0.90f,
               0.00f, 0.18f, 0.00f, 0.15f, 0.60f, 0.10f, 0.30f, 124.f, 2.f, (float)FX_DELAY},
              {{0, {84}}, {2, {79}}, {3, {87}}, {6, {82}}, {8, {84}},
               {10, {91}}, {11, {87}}, {14, {79}}},
@@ -100,9 +100,7 @@ inline void loadPreset(const Preset& p, Send send) {
     for (int s = 0; s < kSteps; ++s)
         for (int n = 0; n < kNotesPerStep; ++n)
             if (p.notes[s][n] >= 0) send(Cmd{CMD_STEP_NOTE, s, p.notes[s][n], (float)n});
-    for (int l = 0; l < kDrumLanes; ++l)
-        for (int s = 0; s < kSteps; ++s)
-            if (p.drums[l][s]) send(Cmd{CMD_DRUM, l, s, 1.f});
+    // Synth-only for now: drum patterns stay in the data but are not loaded.
 }
 
 }  // namespace bergz

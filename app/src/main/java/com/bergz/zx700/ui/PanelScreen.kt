@@ -7,6 +7,9 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.displayCutout
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -52,6 +55,7 @@ fun PanelScreen(state: BergzState) {
         Modifier
             .fillMaxSize()
             .background(Neon.Body)
+            .windowInsetsPadding(WindowInsets.displayCutout)  // keep controls clear of the camera
             .padding(horizontal = 14.dp, vertical = 8.dp),
         verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
@@ -153,7 +157,7 @@ private fun Display(state: BergzState, modifier: Modifier) {
         Text(state.message, style = mono, fontSize = 10.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
             val step = if (state.playhead >= 0) "%02d/16".format(state.playhead + 1) else "--/16"
-            Text("${TRACK_NAMES[state.track]} ▸ $step", style = mono, fontSize = 11.sp)
+            Text("STEP $step", style = mono, fontSize = 11.sp)
             Text("${state.tempo} BPM", style = mono, fontSize = 11.sp)
         }
     }
@@ -161,8 +165,7 @@ private fun Display(state: BergzState, modifier: Modifier) {
 
 @Composable
 private fun NavCluster(state: BergzState, modifier: Modifier) {
-    Row(modifier, horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-        DataWheel(Modifier.width(76.dp)) { state.dataWheel(it) }
+    Row(modifier, verticalAlignment = Alignment.CenterVertically) {
         Column(Modifier.weight(1f).fillMaxHeight(), verticalArrangement = Arrangement.SpaceEvenly) {
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 HwButton("PATCH", Modifier.weight(1f), caption = "▸") { state.nextPatch() }
@@ -222,14 +225,12 @@ private fun SceneButton(name: String, lit: Boolean, onClick: () -> Unit) {
 
 @Composable
 private fun Transport(state: BergzState, modifier: Modifier) {
+    // DATA wheel sits low on the left, away from the camera cut-out.
     Row(modifier, horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.Bottom) {
+        DataWheel(Modifier.width(70.dp), wheelSize = 60.dp) { state.dataWheel(it) }
         HwButton("REC", Modifier.weight(1f), active = state.recording, activeColor = Neon.Rec, height = 46.dp, round = true, caption = "●") { state.toggleRecord() }
         HwButton("STOP", Modifier.weight(1f), height = 46.dp, round = true, caption = "■") { state.stop() }
         HwButton("PLAY", Modifier.weight(1f), active = state.playing, activeColor = Neon.Blue, height = 46.dp, round = true, caption = "▶") { state.play() }
-        HwButton(
-            "TRACK", Modifier.weight(1f), active = state.track > 0, activeColor = Neon.Purple, height = 46.dp, round = true,
-            caption = TRACK_NAMES[state.track].take(4),
-        ) { state.cycleTrack() }
     }
 }
 
@@ -245,21 +246,16 @@ private fun Steps(state: BergzState, modifier: Modifier) {
         horizontalArrangement = Arrangement.spacedBy(5.dp),
     ) {
         for (i in 0 until NativeEngine.STEPS) {
-            val synth = state.track == 0
-            val on = if (synth) state.notes[i][0] >= 0 else state.drums[state.track - 1][i]
-            val ledColor = when {
-                !on -> null
-                synth -> Neon.Pink
-                else -> Neon.Purple
-            }
+            val on = state.notes[i][0] >= 0
+            val ledColor = if (on) Neon.Pink else null
             val chord = state.notes[i].count { it >= 0 }
             val chordMark = if (chord > 1) "+" else ""
-            val text = if (synth && on) noteName(state.notes[i][0]) + chordMark else ""
+            val text = if (on) noteName(state.notes[i][0]) + chordMark else ""
             StepKey(
                 number = i + 1,
                 ledColor = ledColor,
                 isPlayhead = state.playhead == i,
-                isSelected = synth && state.selectedStep == i,
+                isSelected = state.selectedStep == i,
                 isBeat = i % 4 == 0,
                 noteText = text,
                 modifier = Modifier.weight(1f).fillMaxHeight(),

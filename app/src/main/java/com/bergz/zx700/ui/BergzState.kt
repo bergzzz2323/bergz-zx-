@@ -7,7 +7,6 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
-import androidx.compose.runtime.snapshots.SnapshotStateList
 import com.bergz.zx700.audio.NativeEngine
 import com.bergz.zx700.audio.NativeEngine.P
 import kotlin.math.abs
@@ -25,9 +24,6 @@ class BergzState {
 
     val params = mutableStateListOf<Float>().apply { repeat(P.COUNT) { add(0f) } }
     val notes = mutableStateListOf<List<Int>>().apply { repeat(NativeEngine.STEPS) { add(emptyStep) } }
-    val drums: List<SnapshotStateList<Boolean>> = List(NativeEngine.DRUM_LANES) {
-        mutableStateListOf<Boolean>().apply { repeat(NativeEngine.STEPS) { add(false) } }
-    }
 
     var audioOk by mutableStateOf(true)
     var playing by mutableStateOf(false)
@@ -43,8 +39,6 @@ class BergzState {
     var presetIndex by mutableIntStateOf(0)
         private set
     var edited by mutableStateOf(false)
-        private set
-    var track by mutableIntStateOf(0)       // 0 synth, 1..4 drum lanes
         private set
     var shift by mutableStateOf(false)
     var selectedStep by mutableIntStateOf(-1)
@@ -82,9 +76,6 @@ class BergzState {
         val n = NativeEngine.nativePresetNotes(i)
         for (s in 0 until NativeEngine.STEPS)
             notes[s] = List(NativeEngine.NOTES_PER_STEP) { n[s * NativeEngine.NOTES_PER_STEP + it] }
-        val d = NativeEngine.nativePresetDrums(i)
-        for (l in 0 until NativeEngine.DRUM_LANES)
-            for (s in 0 until NativeEngine.STEPS) drums[l][s] = d[l * NativeEngine.STEPS + s] != 0
         root = notes.firstOrNull { it[0] >= 0 }?.get(0) ?: 48
 
         sceneA = FloatArray(P.MOTION_COUNT) { params[it] }
@@ -189,26 +180,12 @@ class BergzState {
         message = "FX ${NativeEngine.FX_NAMES[t]}"
     }
 
-    fun cycleTrack() {
-        track = (track + 1) % TRACK_NAMES.size
-        selectedStep = -1
-        message = "EDIT ${TRACK_NAMES[track]}"
-    }
-
     fun toggleShift() { shift = !shift }
     private fun consumeShift(): Boolean { val s = shift; shift = false; return s }
 
     // ---------------------------------------------------------------- steps
-    /** Synth track: tap empty = add note, tap = select, tap selected = clear. Drum tracks: toggle. */
+    /** Tap empty = add note, tap = select, tap selected = clear. */
     fun stepPressed(step: Int) {
-        if (track > 0) {
-            val lane = track - 1
-            val on = !drums[lane][step]
-            drums[lane][step] = on
-            NativeEngine.nativeSetDrum(lane, step, on)
-            message = "${TRACK_NAMES[track]} STEP ${step + 1} ${if (on) "ON" else "OFF"}"
-            return
-        }
         val current = notes[step]
         when {
             current[0] < 0 -> {
@@ -231,7 +208,7 @@ class BergzState {
     /** Data wheel: moves the selected step through the scale, otherwise sets tempo. */
     fun dataWheel(delta: Int) {
         val s = selectedStep
-        if (track == 0 && s >= 0 && notes[s][0] >= 0) {
+        if (s >= 0 && notes[s][0] >= 0) {
             val oldRoot = notes[s][0]
             val newRoot = moveInScale(oldRoot, delta)
             val shiftBy = newRoot - oldRoot
