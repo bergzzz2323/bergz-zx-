@@ -9,6 +9,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import com.bergz.zx700.audio.NativeEngine
 import com.bergz.zx700.audio.NativeEngine.P
+import com.bergz.zx700.midi.MidiStatus
 import kotlin.math.abs
 import kotlin.math.roundToInt
 import kotlin.random.Random
@@ -19,8 +20,20 @@ import kotlin.random.Random
  * change, so both always agree. Knob values are refreshed from the engine
  * each frame so recorded motion visibly turns the knobs.
  */
+data class PresetInfo(val index: Int, val name: String, val category: Int)
+
 class BergzState {
     private val emptyStep = listOf(-1, -1, -1, -1)
+
+    /** The patch library, read once from the engine's tables. */
+    val library: List<PresetInfo> by lazy {
+        (0 until NativeEngine.nativePresetCount()).map {
+            PresetInfo(it, NativeEngine.nativePresetName(it), NativeEngine.nativePresetCategory(it))
+        }
+    }
+    val categories: List<String> by lazy {
+        (0 until NativeEngine.nativeCategoryCount()).map { NativeEngine.nativeCategoryName(it) }
+    }
 
     val params = mutableStateListOf<Float>().apply { repeat(P.COUNT) { add(0f) } }
     val notes = mutableStateListOf<List<Int>>().apply { repeat(NativeEngine.STEPS) { add(emptyStep) } }
@@ -50,6 +63,16 @@ class BergzState {
     var morph by mutableFloatStateOf(0f)
         private set
     var fxSettingsOpen by mutableStateOf(false)
+    var browserOpen by mutableStateOf(false)
+        private set
+    var browserCategory by mutableIntStateOf(0)
+    var externalSync by mutableStateOf(false)
+        private set
+    var midiActive by mutableStateOf(false)
+        private set
+    var outputName by mutableStateOf("PHONE")
+    var midiSources: List<String> = emptyList()
+    private var transportSetAt = 0L
 
     private var sceneA = FloatArray(P.MOTION_COUNT)
     private var sceneB = FloatArray(P.MOTION_COUNT)
@@ -87,7 +110,22 @@ class BergzState {
         message = "PATCH ${i + 1}/$count"
     }
 
-    fun nextPatch() { if (consumeShift()) loadPreset(presetIndex - 1) else loadPreset(presetIndex + 1) }
+    /** Category and position, e.g. "BASS 2/5". */
+    val presetLabel: String get() {
+        val info = library.getOrNull(presetIndex) ?: return ""
+        val inCat = library.filter { it.category == info.category }
+        return "${categories.getOrElse(info.category) { "" }} ${inCat.indexOf(info) + 1}/${inCat.size}"
+    }
+
+    /** PATCH opens the browser; SHIFT + PATCH jumps straight to the next patch. */
+    fun patchPressed() {
+        if (consumeShift()) { loadPreset(presetIndex + 1); return }
+        browserCategory = library.getOrNull(presetIndex)?.category ?: 0
+        browserOpen = true
+        message = "PICK A SOUND"
+    }
+
+    fun closeBrowser() { browserOpen = false }
 
     // ---------------------------------------------------------------- knobs
     fun setParam(id: Int, value: Float) {
@@ -108,6 +146,16 @@ class BergzState {
         playhead = NativeEngine.nativePlayhead()
         motionMask = NativeEngine.nativeMotionMask()
         val now = SystemClock.uptimeMillis()
+        // External MIDI Start/Stop can change the transport too.
+        if (now - transportSetAt > 250) {
+            val p = NativeEngine.nativeIsPlaying()
+            if (p != playing) {
+                playing = p
+                if (!p && recording) { recording = false; NativeEngine.nativeSetRecord(false) }
+            }
+        }
+        externalSync = NativeEngine.nativeExternalSync()
+        midiActive = now - MidiStatus.lastEventAt < 150
         for (i in 0 until P.COUNT) {
             if (touched[i] || now - localSetAt[i] < 250) continue
             val v = NativeEngine.nativeParam(i)
@@ -117,13 +165,14 @@ class BergzState {
 
     // ---------------------------------------------------------------- transport
     fun play() {
-        if (!playing) { NativeEngine.nativePlay(); playing = true; message = "PLAYING" }
+        if (!playing) { NativeEngine.nativePlay(); playing = true; transportSetAt = SystemClock.uptimeMillis(); message = "PLAYING" }
     }
 
     fun stop() {
         if (recording) toggleRecord()
         NativeEngine.nativeStopSequencer()
         playing = false
+        transportSetAt = SystemClock.uptimeMillis()
         message = "STOPPED"
     }
 

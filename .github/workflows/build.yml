@@ -11,7 +11,7 @@ permissions:
 
 jobs:
   engine-test:
-    name: Engine test (desktop render)
+    name: Engine tests (patches + MIDI)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -20,6 +20,8 @@ jobs:
         run: |
           g++ -O2 -std=c++17 -Wall -Wextra -I../app/src/main/cpp render_test.cpp -o render_test
           ./render_test bergz_presets.wav
+          g++ -O2 -std=c++17 -Wall -I../app/src/main/cpp midi_test.cpp -o midi_test
+          ./midi_test
       - uses: actions/upload-artifact@v4
         with:
           name: preset-demo-wav

@@ -9,6 +9,7 @@
 #include <atomic>
 #include <cmath>
 #include <cstdint>
+#include <mutex>
 #include <vector>
 
 namespace bergz {
@@ -56,16 +57,26 @@ enum CmdType : int {
     CMD_RECORD,        // v > 0.5 arms motion recording
     CMD_TOUCH,         // a = param, b = 1 finger down / 0 finger up
     CMD_CLEAR_MOTION,  // a = param, or -1 for every lane
-    CMD_CLEAR_PATTERN  // empties notes, drums and locks
+    CMD_CLEAR_PATTERN, // empties notes, drums and locks
+    // live MIDI
+    CMD_NOTE_ON,       // a = note, v = velocity 0..1
+    CMD_NOTE_OFF,      // a = note
+    CMD_ALL_NOTES_OFF,
+    CMD_PITCH_BEND,    // v = -1..1 (+/- 2 semitones)
+    CMD_MIDI_CLOCK,    // 24 per quarter note
+    CMD_MIDI_START, CMD_MIDI_CONTINUE, CMD_MIDI_STOP
 };
 
 struct Cmd { int type; int a; int b; float v; };
 
-// ---- Lock-free single-producer / single-consumer command queue -------------
+// ---- Command queue: lock-free for the audio thread (single consumer). -------
+// Several threads may post (UI, MIDI), so pushes are serialised by a mutex the
+// audio thread never touches.
 template <int N>
 class SpscQueue {
 public:
     bool push(const Cmd& c) {
+        std::lock_guard<std::mutex> lock(pushMutex_);
         const int h = head_.load(std::memory_order_relaxed);
         const int next = (h + 1) % N;
         if (next == tail_.load(std::memory_order_acquire)) return false;  // full
@@ -83,6 +94,7 @@ public:
 private:
     std::array<Cmd, N> buf_{};
     std::atomic<int> head_{0}, tail_{0};
+    std::mutex pushMutex_;
 };
 
 // ---- Small DSP building blocks ---------------------------------------------
@@ -187,11 +199,15 @@ struct FmVoice {
     float fbPrev1 = 0.f, fbPrev2 = 0.f;
     float freq = 65.4f;
     int note = -1;
-    int gateLeft = 0;      // samples until note-off
+    int gateLeft = 0;      // samples until note-off (0 = held until noteOff)
     uint32_t order = 0;    // for voice stealing (oldest goes first)
+    bool live = false;     // played from MIDI rather than the sequencer
+    float velocity = 1.f;
 
-    void noteOn(int midi, int gateSamples, uint32_t ord) {
+    void noteOn(int midi, int gateSamples, uint32_t ord, float vel = 1.f, bool isLive = false) {
         note = midi;
+        live = isLive;
+        velocity = vel;
         freq = 440.f * std::pow(2.f, (midi - 69) / 12.f);
         gateLeft = gateSamples;
         order = ord;
@@ -231,7 +247,7 @@ struct FmVoice {
             }
             if (i == kOps - 1) { fbPrev2 = fbPrev1; fbPrev1 = s * e; }
         }
-        return carriers ? carrierSum / (float)carriers : 0.f;
+        return carriers ? velocity * carrierSum / (float)carriers : 0.f;
     }
 };
 
@@ -388,6 +404,8 @@ public:
         return (id >= 0 && id < P_COUNT) ? mirror_[id].load(std::memory_order_relaxed) : 0.f;
     }
     uint32_t motionMask() const { return motionMask_.load(std::memory_order_relaxed); }
+    bool isPlaying() const { return playingFlag_.load(std::memory_order_relaxed); }
+    bool externalSync() const { return extSyncFlag_.load(std::memory_order_relaxed); }
 
     // ---- desktop renderer (same thread as render) ----
     void setParam(int id, float v) { applyParam(id, v); }
@@ -411,17 +429,25 @@ public:
         for (int f = 0; f < frames; ++f) {
             // --- sequencer clock (sample-accurate) ---
             if (playing_) {
-                if (stepCounter_ <= 0.0) {
+                // Internal clock counts samples; external MIDI clock fires steps
+                // from the ticks that arrived with this block.
+                bool fire = false;
+                if (extSync_) {
+                    if (f == 0 && pendingExtSteps_ > 0) { fire = true; pendingExtSteps_ = 0; }
+                } else if (stepCounter_ <= 0.0) {
+                    fire = true;
+                }
+                if (fire) {
                     triggerStep(step_, gateSamples);
                     playhead_.store(step_, std::memory_order_relaxed);
-                    stepCounter_ += samplesPerStep;
+                    stepCounter_ = extSync_ ? samplesPerStep : stepCounter_ + samplesPerStep;
                     step_ = (step_ + 1) % kSteps;
                 }
                 stepCounter_ -= 1.0;
-                if (filterGate_ > 0 && --filterGate_ == 0) filterEnv_.gateOff();
+                if (filterGate_ > 0 && --filterGate_ == 0 && liveHeld_ == 0) filterEnv_.gateOff();
 
                 const int cur = playhead_.load(std::memory_order_relaxed);
-                const double elapsed = samplesPerStep - stepCounter_;
+                const double elapsed = std::max(0.0, samplesPerStep - stepCounter_);
                 const int sub = std::min(kTicksPerStep - 1, (int)(elapsed * kTicksPerStep / samplesPerStep));
                 const int tick = cur * kTicksPerStep + sub;
                 if (tick != lastTick_) { lastTick_ = tick; motionTick(tick); }
@@ -437,7 +463,7 @@ public:
             // --- voices ---
             lfoPhase_ += lfoInc; lfoPhase_ -= std::floor(lfoPhase_);
             const float lfoRaw = std::sin(kTwoPi * lfoPhase_);
-            const float vibrato = 1.f + 0.004f * lfoRaw * p_[P_LFO_DEPTH];
+            const float vibrato = (1.f + 0.004f * lfoRaw * p_[P_LFO_DEPTH]) * pitchBend_;
             float s = 0.f;
             for (auto& v : voices_)
                 if (v.active()) s += v.tick(alg, harmSet, smDepth_, p_[P_FEEDBACK], vibrato, sr_);
@@ -494,6 +520,7 @@ public:
             out[2 * f]     = std::tanh(L * g);
             out[2 * f + 1] = std::tanh(R * g);
         }
+        sampleTime_ += (uint64_t)frames;
     }
 
 private:
@@ -538,7 +565,7 @@ private:
             allocVoice().noteOn(notes_[i][n], gateSamples, ++voiceOrder_);
             any = true;
         }
-        if (any) { filterEnv_.gateOn(); filterGate_ = gateSamples; }
+        if (any) { filterEnv_.gateOn(); filterGate_ = gateSamples; recountLive(); }
         for (int l = 0; l < kDrumLanes; ++l)
             if (drumOn_[l][i]) drums_[l].trigger();
     }
@@ -613,11 +640,12 @@ private:
                 break;
             case CMD_LOCK: if (c.a >= 0 && c.a < kSteps) lock_[c.a] = c.v; break;
             case CMD_PLAY:
-                playing_ = true; step_ = 0; stepCounter_ = 0.0; lastTick_ = -1;
+                playing_ = true; extSync_ = false; step_ = 0; stepCounter_ = 0.0; lastTick_ = -1;
                 break;
             case CMD_STOP:
                 playing_ = false;
-                for (auto& v : voices_) { v.noteOff(); v.gateLeft = 0; }
+                extSync_ = false;
+                for (auto& v : voices_) if (!v.live) { v.noteOff(); v.gateLeft = 0; }
                 filterEnv_.gateOff();
                 playhead_.store(-1, std::memory_order_relaxed);
                 break;
@@ -625,7 +653,79 @@ private:
             case CMD_TOUCH: if (c.a >= 0 && c.a < kMotionParams) touched_[c.a] = c.b != 0; break;
             case CMD_CLEAR_MOTION: clearMotion(c.a); break;
             case CMD_CLEAR_PATTERN: clearPattern(); break;
+
+            case CMD_NOTE_ON: {
+                if (c.a < 0 || c.a > 127) break;
+                const float vel = 0.3f + 0.7f * std::fmax(0.f, std::fmin(1.f, c.v));
+                allocVoice().noteOn(c.a, 0, ++voiceOrder_, vel, true);
+                recountLive();
+                filterEnv_.gateOn();
+                filterGate_ = 0;
+                break;
+            }
+            case CMD_NOTE_OFF:
+                for (auto& v : voices_)
+                    if (v.live && v.note == c.a) { v.noteOff(); v.live = false; }
+                recountLive();
+                if (liveHeld_ == 0) filterEnv_.gateOff();
+                break;
+            case CMD_ALL_NOTES_OFF:
+                for (auto& v : voices_) if (v.live) { v.noteOff(); v.live = false; }
+                liveHeld_ = 0;
+                filterEnv_.gateOff();
+                break;
+            case CMD_PITCH_BEND:
+                pitchBend_ = std::pow(2.f, 2.f * std::fmax(-1.f, std::fmin(1.f, c.v)) / 12.f);
+                break;
+
+            case CMD_MIDI_START:
+                extSync_ = true; playing_ = true; step_ = 0; lastTick_ = -1;
+                waitFirstTick_ = true; clockTicks_ = 0; pendingExtSteps_ = 0;
+                break;
+            case CMD_MIDI_CONTINUE:
+                extSync_ = true; playing_ = true; waitFirstTick_ = false;
+                break;
+            case CMD_MIDI_STOP:
+                applyCmd({CMD_STOP, 0, 0, 0.f});
+                break;
+            case CMD_MIDI_CLOCK: clockTick(); break;
         }
+        playingFlag_.store(playing_, std::memory_order_relaxed);
+        extSyncFlag_.store(extSync_ && playing_, std::memory_order_relaxed);
+    }
+
+    // 24 ticks per quarter note: every 6 ticks is one 16th step. The tempo is
+    // measured over each quarter note so delay times and gates follow the host.
+    // A held MIDI note may have been stolen by another note, so count, don't track.
+    void recountLive() {
+        int n = 0;
+        for (auto& v : voices_) if (v.live) ++n;
+        liveHeld_ = n;
+    }
+
+    void clockTick() {
+        if (!extSync_ || !playing_) {
+            // Clock without Start: still follow the tempo for delay sync.
+            measureTempo();
+            return;
+        }
+        if (waitFirstTick_) { waitFirstTick_ = false; clockTicks_ = 0; pendingExtSteps_ = 1; measureTempo(); return; }
+        ++clockTicks_;
+        if (clockTicks_ % 6 == 0) ++pendingExtSteps_;
+        measureTempo();
+    }
+
+    void measureTempo() {
+        if (++tempoTicks_ < 24) return;
+        tempoTicks_ = 0;
+        if (lastQuarterTime_ > 0 && sampleTime_ > lastQuarterTime_) {
+            const double bpm = 60.0 * sr_ / (double)(sampleTime_ - lastQuarterTime_);
+            if (bpm > 30.0 && bpm < 300.0) {
+                p_[P_TEMPO] = (float)std::round(bpm * 10.0) / 10.f;
+                mirror_[P_TEMPO].store(p_[P_TEMPO], std::memory_order_relaxed);
+            }
+        }
+        lastQuarterTime_ = sampleTime_;
     }
 
     void drainCommands() { Cmd c; while (queue_.pop(c)) applyCmd(c); }
@@ -681,6 +781,14 @@ private:
     float motion_[kMotionParams][kMotionTicks]{};
     std::atomic<uint32_t> motionMask_{0};
     std::array<std::atomic<float>, P_COUNT> mirror_{};
+
+    // live MIDI + external clock
+    int liveHeld_ = 0;
+    float pitchBend_ = 1.f;
+    bool extSync_ = false, waitFirstTick_ = false;
+    int clockTicks_ = 0, pendingExtSteps_ = 0, tempoTicks_ = 0;
+    uint64_t sampleTime_ = 0, lastQuarterTime_ = 0;
+    std::atomic<bool> playingFlag_{false}, extSyncFlag_{false};
 };
 
 }  // namespace bergz

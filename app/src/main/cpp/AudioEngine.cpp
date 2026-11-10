@@ -171,21 +171,47 @@ JNIEXPORT jintArray JNICALL JNI_FN(nativePresetNotes)(JNIEnv* env, jobject, jint
     return arr;
 }
 
-// 4 lanes x 16 steps, 0/1
-JNIEXPORT jintArray JNICALL JNI_FN(nativePresetDrums)(JNIEnv* env, jobject, jint i) {
-    jintArray arr = env->NewIntArray(kDrumLanes * kSteps);
-    if (i >= 0 && i < (jint)presets().size()) {
-        jint tmp[kDrumLanes * kSteps];
-        for (int l = 0; l < kDrumLanes; ++l)
-            for (int s = 0; s < kSteps; ++s) tmp[l * kSteps + s] = presets()[i].drums[l][s];
-        env->SetIntArrayRegion(arr, 0, kDrumLanes * kSteps, tmp);
-    }
-    return arr;
-}
-
 JNIEXPORT void JNICALL JNI_FN(nativeLoadPreset)(JNIEnv*, jobject, jint i) {
     if (!gEngine || i < 0 || i >= (jint)presets().size()) return;
     loadPreset(presets()[i], [](const Cmd& c) { gEngine->synth().post(c); });
+}
+
+JNIEXPORT jint JNICALL JNI_FN(nativePresetCategory)(JNIEnv*, jobject, jint i) {
+    if (i < 0 || i >= (jint)presets().size()) return 0;
+    return presets()[i].category;
+}
+
+JNIEXPORT jint JNICALL JNI_FN(nativeCategoryCount)(JNIEnv*, jobject) { return kCategories; }
+
+JNIEXPORT jstring JNICALL JNI_FN(nativeCategoryName)(JNIEnv* env, jobject, jint i) {
+    return env->NewStringUTF(i >= 0 && i < kCategories ? kCategoryNames[i] : "");
+}
+
+// ---- live MIDI (called from the MIDI thread; the queue is multi-producer safe) ----
+JNIEXPORT void JNICALL JNI_FN(nativeNoteOn)(JNIEnv*, jobject, jint note, jfloat velocity) {
+    post(CMD_NOTE_ON, note, 0, velocity);
+}
+JNIEXPORT void JNICALL JNI_FN(nativeNoteOff)(JNIEnv*, jobject, jint note) { post(CMD_NOTE_OFF, note, 0, 0.f); }
+JNIEXPORT void JNICALL JNI_FN(nativeAllNotesOff)(JNIEnv*, jobject) { post(CMD_ALL_NOTES_OFF, 0, 0, 0.f); }
+JNIEXPORT void JNICALL JNI_FN(nativePitchBend)(JNIEnv*, jobject, jfloat v) { post(CMD_PITCH_BEND, 0, 0, v); }
+JNIEXPORT void JNICALL JNI_FN(nativeMidiClock)(JNIEnv*, jobject) { post(CMD_MIDI_CLOCK, 0, 0, 0.f); }
+JNIEXPORT void JNICALL JNI_FN(nativeMidiStart)(JNIEnv*, jobject) { post(CMD_MIDI_START, 0, 0, 0.f); }
+JNIEXPORT void JNICALL JNI_FN(nativeMidiContinue)(JNIEnv*, jobject) { post(CMD_MIDI_CONTINUE, 0, 0, 0.f); }
+JNIEXPORT void JNICALL JNI_FN(nativeMidiStop)(JNIEnv*, jobject) { post(CMD_MIDI_STOP, 0, 0, 0.f); }
+
+JNIEXPORT jboolean JNICALL JNI_FN(nativeIsPlaying)(JNIEnv*, jobject) {
+    return gEngine && gEngine->synth().isPlaying() ? JNI_TRUE : JNI_FALSE;
+}
+JNIEXPORT jboolean JNICALL JNI_FN(nativeExternalSync)(JNIEnv*, jobject) {
+    return gEngine && gEngine->synth().externalSync() ? JNI_TRUE : JNI_FALSE;
+}
+
+// Reopen the audio stream, e.g. when a USB audio device is plugged in, so the
+// sound follows the phone's current output (USB-C interface, DAC, headphones).
+JNIEXPORT jboolean JNICALL JNI_FN(nativeRestartAudio)(JNIEnv*, jobject) {
+    if (!gEngine) return JNI_FALSE;
+    gEngine->stop();
+    return gEngine->start() ? JNI_TRUE : JNI_FALSE;
 }
 
 JNIEXPORT void JNICALL JNI_FN(nativeSetDrum)(JNIEnv*, jobject, jint lane, jint step, jboolean on) {

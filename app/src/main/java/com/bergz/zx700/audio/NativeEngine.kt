@@ -54,6 +54,37 @@ object NativeEngine {
     external fun nativePresetName(index: Int): String
     external fun nativePresetParams(index: Int): FloatArray
     external fun nativePresetNotes(index: Int): IntArray
-    external fun nativePresetDrums(index: Int): IntArray
     external fun nativeLoadPreset(index: Int)
+    external fun nativePresetCategory(index: Int): Int
+    external fun nativeCategoryCount(): Int
+    external fun nativeCategoryName(index: Int): String
+
+    // Live MIDI
+    external fun nativeNoteOn(note: Int, velocity: Float)
+    external fun nativeNoteOff(note: Int)
+    external fun nativeAllNotesOff()
+    external fun nativePitchBend(value: Float)
+    external fun nativeMidiClock()
+    external fun nativeMidiStart()
+    external fun nativeMidiContinue()
+    external fun nativeMidiStop()
+    external fun nativeIsPlaying(): Boolean
+    external fun nativeExternalSync(): Boolean
+    external fun nativeRestartAudio(): Boolean
+
+    @Volatile private var started = false
+    @Volatile var audioOk = false
+        private set
+
+    /** Starts audio once, whoever needs it first (the screen or the MIDI service). */
+    @Synchronized
+    fun ensureStarted(): Boolean {
+        if (!started) { audioOk = nativeStart(); started = true }
+        return audioOk
+    }
+
+    @Synchronized
+    fun restartAudio() {
+        if (started) audioOk = nativeRestartAudio()
+    }
 }

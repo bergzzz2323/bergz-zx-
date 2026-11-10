@@ -10,6 +10,7 @@ captures/
 
 # Desktop test renderer output
 tools/render_test
+tools/midi_test
 tools/*.wav
 
 # Imported reference banks (SysEx from other instruments) are for local

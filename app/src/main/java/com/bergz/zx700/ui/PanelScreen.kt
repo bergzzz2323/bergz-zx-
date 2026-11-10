@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Slider
@@ -102,6 +103,7 @@ fun PanelScreen(state: BergzState) {
         }
     }
     if (state.fxSettingsOpen) FxSettings(state)
+    if (state.browserOpen) PatchBrowser(state)
     }
 }
 
@@ -221,7 +223,25 @@ private fun Header(state: BergzState) {
                 .background(Neon.Pink),
         )
         Spacer(Modifier.width(12.dp))
-        if (!state.audioOk) Text("AUDIO OFF", color = Neon.Rec, fontSize = 9.sp, fontWeight = FontWeight.Bold)
+        // MIDI: activity light + connected sources, then where the sound is going.
+        Box(
+            Modifier.size(7.dp)
+                .let { if (state.midiActive) it.shadow(6.dp, CircleShape, ambientColor = Neon.Blue, spotColor = Neon.Blue) else it }
+                .background(if (state.midiActive) Neon.Blue else Neon.LedOff, CircleShape),
+        )
+        Spacer(Modifier.width(5.dp))
+        val sources = state.midiSources
+        Text(
+            if (sources.isEmpty()) "MIDI READY" else "MIDI · " + sources.joinToString(", "),
+            color = if (sources.isEmpty()) Neon.Muted else Neon.Blue, fontSize = 8.sp, fontWeight = FontWeight.Bold,
+            letterSpacing = 1.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.widthIn(max = 220.dp),
+        )
+        Spacer(Modifier.width(10.dp))
+        Text("OUT · ${state.outputName}", color = Neon.Dim, fontSize = 8.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
+        if (!state.audioOk) {
+            Spacer(Modifier.width(8.dp))
+            Text("AUDIO OFF", color = Neon.Rec, fontSize = 9.sp, fontWeight = FontWeight.Bold)
+        }
     }
 }
 
@@ -241,7 +261,7 @@ private fun Display(state: BergzState, modifier: Modifier) {
         verticalArrangement = Arrangement.SpaceBetween,
     ) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-            Text("PATCH ${state.presetIndex + 1}${if (state.edited) "*" else ""}", style = mono, fontSize = 11.sp)
+            Text("${state.presetLabel}${if (state.edited) "*" else ""}", style = mono, fontSize = 11.sp)
             Text("ALG ${(state.params[P.ALGORITHM] + 1).toInt()} · C ${state.scale.name}", style = mono, fontSize = 11.sp)
         }
         Text(state.presetName, style = mono, fontSize = 22.sp, fontWeight = FontWeight.Bold, maxLines = 1)
@@ -249,7 +269,7 @@ private fun Display(state: BergzState, modifier: Modifier) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
             val step = if (state.playhead >= 0) "%02d/16".format(state.playhead + 1) else "--/16"
             Text("STEP $step", style = mono, fontSize = 11.sp)
-            Text("${state.tempo} BPM", style = mono, fontSize = 11.sp)
+            Text(if (state.externalSync) "EXT ${state.tempo} BPM" else "${state.tempo} BPM", style = mono, fontSize = 11.sp)
         }
     }
 }
@@ -259,7 +279,7 @@ private fun NavCluster(state: BergzState, modifier: Modifier) {
     Row(modifier, verticalAlignment = Alignment.CenterVertically) {
         Column(Modifier.weight(1f).fillMaxHeight(), verticalArrangement = Arrangement.SpaceEvenly) {
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                HwButton("PATCH", Modifier.weight(1f), caption = "▸") { state.nextPatch() }
+                HwButton(if (state.shift) "NEXT" else "PATCH", Modifier.weight(1f), caption = "☰") { state.patchPressed() }
                 HwButton(if (state.shift) "SCALE" else "ALGO", Modifier.weight(1f), caption = "▸") { state.algoOrScale() }
             }
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -351,6 +371,73 @@ private fun Steps(state: BergzState, modifier: Modifier) {
                 noteText = text,
                 modifier = Modifier.weight(1f).fillMaxHeight(),
             ) { state.stepPressed(i) }
+        }
+    }
+}
+
+/** Patch browser: categories along the top, that category's sounds below. Tap to hear it. */
+@Composable
+private fun PatchBrowser(state: BergzState) {
+    val shape = RoundedCornerShape(14.dp)
+    Box(
+        Modifier
+            .fillMaxSize()
+            .background(Color.Black.copy(alpha = 0.55f))
+            .clickable(remember { MutableInteractionSource() }, indication = null) { state.closeBrowser() },
+        contentAlignment = Alignment.TopCenter,
+    ) {
+        Column(
+            Modifier
+                .padding(top = 24.dp)
+                .fillMaxWidth(0.8f)
+                .fillMaxHeight(0.72f)
+                .shadow(16.dp, shape, ambientColor = Neon.Blue, spotColor = Neon.Blue)
+                .background(Neon.Panel, shape)
+                .border(1.dp, Neon.Blue, shape)
+                .clickable(remember { MutableInteractionSource() }, indication = null) { }
+                .padding(horizontal = 16.dp, vertical = 10.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    "PATCHES", color = Neon.Blue, fontSize = 13.sp, fontWeight = FontWeight.ExtraBold,
+                    letterSpacing = 2.sp, style = TextStyle(shadow = glow(Neon.Blue)),
+                )
+                Spacer(Modifier.width(12.dp))
+                Text(
+                    state.presetName, color = Neon.Pink, fontSize = 12.sp, fontWeight = FontWeight.Bold,
+                    fontFamily = FontFamily.Monospace, modifier = Modifier.weight(1f),
+                )
+                HwButton("", Modifier.width(76.dp), active = true, activeColor = Neon.Blue, height = 30.dp, caption = "DONE") {
+                    state.closeBrowser()
+                }
+            }
+            // categories, two rows of five
+            state.categories.chunked(5).forEachIndexed { row, cats ->
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    cats.forEachIndexed { col, name ->
+                        val idx = row * 5 + col
+                        HwButton(
+                            "", Modifier.weight(1f), active = state.browserCategory == idx,
+                            activeColor = Neon.Purple, height = 30.dp, caption = name,
+                        ) { state.browserCategory = idx }
+                    }
+                }
+            }
+            Box(Modifier.fillMaxWidth().height(1.dp).background(Neon.Line))
+            // sounds in the chosen category, three per row
+            val sounds = state.library.filter { it.category == state.browserCategory }
+            sounds.chunked(3).forEach { rowItems ->
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    rowItems.forEach { info ->
+                        HwButton(
+                            "", Modifier.weight(1f), active = state.presetIndex == info.index,
+                            activeColor = Neon.Pink, height = 36.dp, caption = info.name,
+                        ) { state.loadPreset(info.index) }
+                    }
+                    repeat(3 - rowItems.size) { Spacer(Modifier.weight(1f)) }
+                }
+            }
         }
     }
 }

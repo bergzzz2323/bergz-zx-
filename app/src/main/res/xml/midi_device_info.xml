@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- How Bergz ZX 700 appears to other MIDI apps on the phone. -->
+<devices>
+    <device manufacturer="Bergz" product="ZX 700">
+        <input-port name="Bergz ZX 700 In" />
+    </device>
+</devices>
