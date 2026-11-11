@@ -341,7 +341,7 @@ private fun Display(state: BergzState, modifier: Modifier) {
 private fun NavCluster(state: BergzState, modifier: Modifier) {
     BoxWithConstraints(modifier.padding(vertical = 2.dp)) {
         // two rows of label (~13dp) + button, with an 8dp gap between the rows
-        val btnH = ((maxHeight - 8.dp - 2 * 13.dp) / 2).coerceIn(32.dp, 60.dp)
+        val btnH = ((maxHeight - 8.dp - 13.dp * 2) / 2).coerceIn(32.dp, 60.dp)
         Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.SpaceBetween) {
             Row(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
                 HwButton(if (state.shift) "NEXT" else "PATCH", Modifier.weight(1f), height = btnH, caption = "☰", captionSize = 17.sp) { state.patchPressed() }
