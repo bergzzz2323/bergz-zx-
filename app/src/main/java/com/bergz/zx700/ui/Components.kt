@@ -412,7 +412,7 @@ enum class TransportKind { REC, STOP, PLAY }
  * and PLAY lights up in the theme's AccentB (mint) while the pattern plays.
  */
 @Composable
-fun TransportButton(kind: TransportKind, lit: Boolean, modifier: Modifier = Modifier, size: Dp = 48.dp, onClick: () -> Unit) {
+fun TransportButton(kind: TransportKind, lit: Boolean, modifier: Modifier = Modifier, size: Dp = 48.dp, label: String = kind.name, onClick: () -> Unit) {
     val playLit = kind == TransportKind.PLAY && lit
     val glowColor = when {
         playLit -> Theme.AccentB
@@ -420,7 +420,7 @@ fun TransportButton(kind: TransportKind, lit: Boolean, modifier: Modifier = Modi
         else -> null
     }
     Column(modifier, horizontalAlignment = Alignment.CenterHorizontally) {
-        PanelLabel(kind.name, color = if (playLit) Theme.AccentB else Theme.Dim)
+        PanelLabel(label, color = if (playLit) Theme.AccentB else Theme.Dim)
         Spacer(Modifier.height(3.dp))
         Box(
             Modifier

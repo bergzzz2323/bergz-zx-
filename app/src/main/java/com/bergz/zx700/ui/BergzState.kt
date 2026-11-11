@@ -252,6 +252,24 @@ class BergzState {
         if (!playing) { NativeEngine.nativePlay(); playing = true; transportSetAt = SystemClock.uptimeMillis(); message = "PLAYING" }
     }
 
+    private var lastPlayTap = 0L
+
+    /**
+     * PLAY (PATT). One tap plays straight away (no waiting to see if a second tap
+     * is coming). Two quick taps (within 350 ms) also make a new random pattern.
+     */
+    fun playPressed() {
+        val now = SystemClock.uptimeMillis()
+        if (now - lastPlayTap < 350L) {
+            lastPlayTap = 0L
+            randomPattern()
+            play()
+        } else {
+            lastPlayTap = now
+            play()
+        }
+    }
+
     fun stop() {
         if (recording) toggleRecord()
         NativeEngine.nativeStopSequencer()
@@ -462,6 +480,61 @@ class BergzState {
             writeStep(s, cur.map { if (it >= 0) snapToScale((it + shiftBy).coerceIn(24, 100), key, scale) else -1 })
         }
         message = "NEW MELODY · $keyScaleName"
+    }
+
+    // ---------------------------------------------------------------- random pattern
+    /**
+     * PLAY (PATT): a brand-new random pattern, both which steps play and which
+     * notes. It stays musical: notes are always in the chosen key and scale, the
+     * line moves mostly by small steps with the odd leap, step 1 always plays,
+     * and it keeps the patch's own register (bass stays low, bleeps stay high)
+     * and its feel (chord patches get chords, single-note patches get melody).
+     */
+    fun randomPattern() {
+        val r = Random(SystemClock.uptimeMillis())
+        val current = notes.filter { it[0] >= 0 }
+        val roots = current.map { it[0] }.sorted()
+        val center = snapToScale(if (roots.isEmpty()) homeNote else roots[roots.size / 2], key, scale)
+        val voices = (current.map { st -> st.count { it >= 0 } }.maxOrNull() ?: 1).coerceIn(1, NativeEngine.NOTES_PER_STEP)
+        val chordy = voices > 1
+
+        // Which steps play: chord patches are sparser, melodies busier. 8th-note
+        // positions are favoured so it grooves rather than scatters.
+        val target = if (chordy) r.nextInt(3, 7) else r.nextInt(6, 12)
+        val on = BooleanArray(NativeEngine.STEPS)
+        on[0] = true
+        var count = 1
+        while (count < target) {
+            val s = r.nextInt(1, NativeEngine.STEPS)
+            if (on[s]) continue
+            val weight = when {
+                s % 4 == 0 -> 0.9f   // beats
+                s % 2 == 0 -> 0.65f  // 8ths
+                else -> 0.35f        // 16th offbeats
+            }
+            if (r.nextFloat() < weight) { on[s] = true; count++ }
+        }
+
+        // Which notes: a random walk through the scale around the patch's register.
+        var pos = 0  // scale degrees away from the centre
+        for (s in 0 until NativeEngine.STEPS) {
+            if (!on[s]) { writeStep(s, emptyStep); continue }
+            if (s > 0) {
+                val move = if (r.nextFloat() < 0.18f) r.nextInt(-5, 6) else r.nextInt(-2, 3)
+                pos = (pos + move).coerceIn(-5, 7)
+            }
+            val root = moveInScale(center, pos, key, scale).coerceIn(24, 100)
+            val step = MutableList(NativeEngine.NOTES_PER_STEP) { -1 }
+            step[0] = root
+            if (chordy) {
+                // stack scale thirds above the root: triads and 7ths
+                for (v in 1 until voices) step[v] = moveInScale(root, 2 * v, key, scale).coerceIn(24, 100)
+            }
+            writeStep(s, step)
+        }
+        for (s in 0 until NativeEngine.STEPS) ghosts[s] = emptyStep
+        selectedStep = -1
+        message = "NEW PATTERN · $keyScaleName"
     }
 
     // ---------------------------------------------------------------- scenes

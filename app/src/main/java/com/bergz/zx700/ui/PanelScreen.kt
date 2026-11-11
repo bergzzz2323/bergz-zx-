@@ -443,7 +443,8 @@ private fun Transport(state: BergzState, modifier: Modifier) {
                 TransportButton(TransportKind.REC, state.recording, size = small) { state.toggleRecord() }
                 TransportButton(TransportKind.STOP, false, size = small) { state.stop() }
             }
-            TransportButton(TransportKind.PLAY, state.playing, size = big) { state.play() }
+            // double-tap PLAY (PATT) for a new random pattern
+            TransportButton(TransportKind.PLAY, state.playing, size = big, label = "PLAY (PATT)") { state.playPressed() }
             DataWheel(Modifier.width(wheel + 6.dp), wheelSize = wheel, labelOnTop = true) { state.dataWheel(it) }
         }
     }

@@ -1,4 +1,4 @@
-# Bergz ZX 700 — test build v0.5
+# Bergz ZX 700 — test build v0.6
 
 A landscape FM groove synth for Android, tuned for the Pixel 9.
 Native C++ FM engine on Oboe (low-latency audio), Jetpack Compose panel UI.
@@ -25,6 +25,7 @@ The app opens full-screen in landscape. Use headphones or a speaker for the bass
 | Control | What it does |
 |---|---|
 | **PLAY / STOP** (bottom left) | Start and stop the 16-step pattern. PLAY lights mint while it runs |
+| **PLAY (PATT) double-tap** | Two quick taps on PLAY make a brand-new random pattern: random steps and random notes, always in your key and scale, in the patch's own register (chord patches get chords, melodic patches get melodies). One tap just plays |
 | **PATCH** | Opens the patch browser: categories on the left, sounds on the right (both scroll). Tap a sound to hear it. SHIFT + PATCH = next patch |
 | **MUTATE ✦** | New variation of the current sound, kept musical. Tap repeatedly |
 | **SHIFT + MUTATE** | New melody on the same steps, locked to the scale |
