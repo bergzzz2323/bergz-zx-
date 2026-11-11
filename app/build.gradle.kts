@@ -1,3 +1,6 @@
+import java.io.InputStream
+import java.net.URI
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
@@ -91,8 +94,8 @@ val fetchFonts = tasks.register("fetchFonts") {
             val file = File(base, target)
             if (!file.exists() || file.length() == 0L) {
                 file.parentFile.mkdirs()
-                java.net.URI("https://raw.githubusercontent.com/google/fonts/main/$path").toURL()
-                    .openStream().use { input -> file.outputStream().use { input.copyTo(it) } }
+                URI("https://raw.githubusercontent.com/google/fonts/main/$path").toURL()
+                    .openStream().use { input: InputStream -> file.outputStream().use { out -> input.copyTo(out) } }
                 println("Fetched $target")
             }
         }
