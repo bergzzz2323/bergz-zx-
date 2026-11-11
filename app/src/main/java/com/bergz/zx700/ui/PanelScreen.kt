@@ -222,12 +222,12 @@ private fun K(state: BergzState, id: Int, ring: Color, labelOverride: String? = 
 private fun Header(state: BergzState) {
     Row(Modifier.fillMaxWidth().height(24.dp), verticalAlignment = Alignment.CenterVertically) {
         Text(
-            "BERGZ", color = Theme.Text, fontSize = 21.sp, fontWeight = FontWeight.Bold, fontFamily = PanelFonts.Condensed,
+            "BERGZ", color = Theme.Text, fontSize = 21.sp, fontWeight = FontWeight.ExtraBold,
             fontStyle = FontStyle.Italic, fontFamily = PanelFonts.Condensed, letterSpacing = 4.sp,
         )
         Spacer(Modifier.width(10.dp))
         Text(
-            "ZX·700", color = Theme.ModelRed, fontSize = 15.sp, fontWeight = FontWeight.Bold, fontFamily = PanelFonts.Condensed,
+            "ZX·700", color = Theme.ModelRed, fontSize = 15.sp, fontWeight = FontWeight.ExtraBold,
             fontStyle = FontStyle.Italic, fontFamily = PanelFonts.Condensed, letterSpacing = 2.sp,
         )
         Spacer(Modifier.width(10.dp))
