@@ -26,22 +26,43 @@ constexpr int kNotesPerStep = 4;  // up to a 4-note chord on any step
 enum Param : int {
     P_FM_DEPTH = 0, P_HARMONIC, P_FEEDBACK,
     P_CUTOFF, P_RESO, P_ENV_AMT,
-    P_FX_MIX, P_FX_PARAM, P_VOLUME,
+    P_DLY_MIX, P_DLY_FB, P_VOLUME,     // delay amount / feedback
     P_ATTACK, P_DECAY, P_SUSTAIN, P_RELEASE,
     P_LFO_RATE, P_LFO_DEPTH,
     P_GATE,       // note length, 0.1 .. 8 steps
+    P_REV_MIX, P_REV_SIZE,             // reverb amount / size
+    P_PH_MIX, P_PH_RATE,               // phaser amount / rate
     P_TEMPO,      // actual BPM, not 0..1
     P_ALGORITHM,  // 0 .. kAlgorithms-1
-    P_FX_TYPE,    // 0 reverb, 1 delay, 2 phaser
+    P_FX_TYPE,    // the patch's featured effect (preset data; all effects can run together)
     // Per-effect settings (FX settings panel). Not part of presets.
     P_REV_TONE, P_REV_WIDTH,
     P_DLY_TIME,   // 0..1 -> 1/16, 1/8, dotted 1/8, 1/4
     P_DLY_TONE, P_DLY_PING,
     P_PH_DEPTH, P_PH_FEEDBACK,
+    P_REV_ON, P_DLY_ON, P_PH_ON,       // on/off lights; stack any combination
     P_COUNT
 };
 constexpr int kPresetParams = P_REV_TONE;  // presets store everything before this
-enum FxType : int { FX_REVERB = 0, FX_DELAY = 1, FX_PHASER = 2, FX_COUNT };
+// Panel order: delay is the first effect and the only one on at start-up.
+enum FxType : int { FX_DELAY = 0, FX_REVERB = 1, FX_PHASER = 2, FX_COUNT };
+
+// Start-up value of every parameter (also restored by CMD_RESET_DEFAULTS).
+constexpr float kDefaultParams[P_COUNT] = {
+    0.80f, 0.40f, 0.25f,         // fm depth, harmonic, feedback
+    0.45f, 0.35f, 0.55f,         // cutoff, reso, env amt
+    0.25f, 0.45f, 0.70f,         // delay mix, delay feedback, volume
+    0.02f, 0.30f, 0.20f, 0.20f,  // A D S R
+    0.30f, 0.15f,                // lfo rate, depth
+    0.46f,                       // gate (~0.75 step)
+    0.30f, 0.60f,                // reverb mix, size
+    0.45f, 0.30f,                // phaser mix, rate
+    120.f, 0.f, (float)FX_DELAY, // tempo, algorithm, featured fx
+    0.67f, 1.0f,                 // reverb tone, width
+    0.67f, 0.32f, 1.0f,          // delay time (dotted 1/8), tone, ping-pong
+    0.73f, 0.67f,                // phaser depth, intensity
+    0.f, 1.f, 0.f,               // reverb off, delay ON, phaser off
+};
 
 // Motion recording: knob moves are stored per parameter at 8 points per step.
 constexpr int kTicksPerStep = 8;
@@ -58,6 +79,7 @@ enum CmdType : int {
     CMD_TOUCH,         // a = param, b = 1 finger down / 0 finger up
     CMD_CLEAR_MOTION,  // a = param, or -1 for every lane
     CMD_CLEAR_PATTERN, // empties notes, drums and locks
+    CMD_RESET_DEFAULTS,// every parameter back to kDefaultParams (app start)
     // live MIDI
     CMD_NOTE_ON,       // a = note, v = velocity 0..1
     CMD_NOTE_OFF,      // a = note
@@ -382,7 +404,7 @@ struct Phaser {
 class SynthCore {
 public:
     explicit SynthCore(float sampleRate) {
-        for (int i = 0; i < P_COUNT; ++i) mirror_[i].store(p_[i]);
+        for (int i = 0; i < P_COUNT; ++i) { p_[i] = kDefaultParams[i]; mirror_[i].store(p_[i]); }
         setSampleRate(sampleRate);
         loadDefaultPattern();
     }
@@ -424,7 +446,6 @@ public:
         const float dlyCoef = 0.08f + 0.85f * p_[P_DLY_TONE];
         const bool pingPong = p_[P_DLY_PING] > 0.5f;
         const float lfoInc = (0.05f * std::pow(400.f, p_[P_LFO_RATE])) / sr_;
-        const int fx = fxType_;
 
         for (int f = 0; f < frames; ++f) {
             // --- sequencer clock (sample-accurate) ---
@@ -458,7 +479,10 @@ public:
             smCut_ += 0.002f * (targetCut - smCut_);
             smDepth_ += 0.002f * (p_[P_FM_DEPTH] - smDepth_);
             smVol_ += 0.002f * (p_[P_VOLUME] - smVol_);
-            smMix_ += 0.002f * (p_[P_FX_MIX] - smMix_);
+            // effect amounts fade with their on/off light, so switching never clicks
+            smDly_ += 0.002f * ((p_[P_DLY_ON] > 0.5f ? p_[P_DLY_MIX] : 0.f) - smDly_);
+            smRev_ += 0.002f * ((p_[P_REV_ON] > 0.5f ? p_[P_REV_MIX] : 0.f) - smRev_);
+            smPh_  += 0.002f * ((p_[P_PH_ON]  > 0.5f ? p_[P_PH_MIX]  : 0.f) - smPh_);
 
             // --- voices ---
             lfoPhase_ += lfoInc; lfoPhase_ -= std::floor(lfoPhase_);
@@ -474,48 +498,45 @@ public:
             const float cutoffHz = 30.f * std::pow(2.f, smCut_ * 9.3f + fenv + lfoCut);
             s = filter_.process(s, cutoffHz, p_[P_RESO], sr_);
 
-            // --- effect (synth only) ---
-            float wl = 0.f, wr = 0.f, dryGain = 1.f;
-            switch (fx) {
-                case FX_REVERB:
-                    reverb_.process(s, p_[P_FX_PARAM], p_[P_REV_TONE], p_[P_REV_WIDTH], wl, wr);
-                    wl *= 2.5f * smMix_; wr *= 2.5f * smMix_;
-                    dryGain = 1.f - 0.3f * smMix_;
-                    break;
-                case FX_DELAY: {
-                    const size_t rp = (delayPos_ + delayL_.size() - delaySamples) % delayL_.size();
-                    const float dl = delayL_[rp], dr = delayR_[rp];
-                    const float fb = p_[P_FX_PARAM] * 0.85f;
-                    if (pingPong) {  // bounce left/right
-                        dampL_ += dlyCoef * (dr * fb - dampL_);
-                        dampR_ += dlyCoef * (dl * fb - dampR_);
-                        delayL_[delayPos_] = s + dampL_ + 1e-20f;
-                        delayR_[delayPos_] = dampR_ + 1e-20f;
-                    } else {         // straight echoes, centred
-                        dampL_ += dlyCoef * (dl * fb - dampL_);
-                        dampR_ += dlyCoef * (dr * fb - dampR_);
-                        delayL_[delayPos_] = s + dampL_ + 1e-20f;
-                        delayR_[delayPos_] = s + dampR_ + 1e-20f;
-                    }
-                    delayPos_ = (delayPos_ + 1) % delayL_.size();
-                    wl = dl * smMix_; wr = dr * smMix_;
-                    break;
-                }
-                case FX_PHASER: {
-                    float pl, pr;
-                    phaser_.process(s, p_[P_FX_PARAM], p_[P_PH_DEPTH], p_[P_PH_FEEDBACK], sr_, pl, pr);
-                    dryGain = 1.f - smMix_;
-                    wl = pl * smMix_; wr = pr * smMix_;
-                    break;
-                }
+            // --- effects: phaser (insert) -> delay -> reverb. Any combination can run. ---
+            // Every effect always runs, so buffers stay warm and turning one on is seamless;
+            // its output is simply faded by the on/off light.
+            float pl, pr;
+            phaser_.process(s, p_[P_PH_RATE], p_[P_PH_DEPTH], p_[P_PH_FEEDBACK], sr_, pl, pr);
+            const float dryL = s * (1.f - smPh_) + pl * smPh_;
+            const float dryR = s * (1.f - smPh_) + pr * smPh_;
+            const float toFx = 0.5f * (dryL + dryR);
+
+            const size_t rp = (delayPos_ + delayL_.size() - delaySamples) % delayL_.size();
+            const float dl = delayL_[rp], dr = delayR_[rp];
+            const float fb = p_[P_DLY_FB] * 0.85f;
+            const float dIn = toFx;
+            if (pingPong) {  // bounce left/right
+                dampL_ += dlyCoef * (dr * fb - dampL_);
+                dampR_ += dlyCoef * (dl * fb - dampR_);
+                delayL_[delayPos_] = dIn + dampL_ + 1e-20f;
+                delayR_[delayPos_] = dampR_ + 1e-20f;
+            } else {         // straight echoes, centred
+                dampL_ += dlyCoef * (dl * fb - dampL_);
+                dampR_ += dlyCoef * (dr * fb - dampR_);
+                delayL_[delayPos_] = dIn + dampL_ + 1e-20f;
+                delayR_[delayPos_] = dIn + dampR_ + 1e-20f;
             }
+            delayPos_ = (delayPos_ + 1) % delayL_.size();
+            const float echoL = dl * smDly_, echoR = dr * smDly_;
+
+            float rl, rr;
+            reverb_.process(toFx + 0.5f * (echoL + echoR), p_[P_REV_SIZE], p_[P_REV_TONE], p_[P_REV_WIDTH], rl, rr);
+            const float wl = echoL + rl * 2.5f * smRev_;
+            const float wr = echoR + rr * 2.5f * smRev_;
+            const float dryGain = 1.f - 0.3f * smRev_;
 
             // --- drums (dry) ---
             float d = 0.f;
             for (auto& dv : drums_) d += dv.tick(noise_, sr_);
 
-            const float L = s * dryGain + wl + 0.8f * d;
-            const float R = s * dryGain + wr + 0.8f * d;
+            const float L = dryL * dryGain + wl + 0.8f * d;
+            const float R = dryR * dryGain + wr + 0.8f * d;
             const float g = 1.6f * smVol_;
             out[2 * f]     = std::tanh(L * g);
             out[2 * f + 1] = std::tanh(R * g);
@@ -592,8 +613,7 @@ private:
             p_[id] = (float)algorithm_;
             applyEnvelopes();
         } else if (id == P_FX_TYPE) {
-            fxType_ = std::max(0, std::min(FX_COUNT - 1, (int)v));
-            p_[id] = (float)fxType_;
+            p_[id] = (float)std::max(0, std::min(FX_COUNT - 1, (int)v));
         } else if (id == P_TEMPO) {
             p_[id] = std::fmax(40.f, std::fmin(240.f, v));
         } else {
@@ -653,6 +673,10 @@ private:
             case CMD_TOUCH: if (c.a >= 0 && c.a < kMotionParams) touched_[c.a] = c.b != 0; break;
             case CMD_CLEAR_MOTION: clearMotion(c.a); break;
             case CMD_CLEAR_PATTERN: clearPattern(); break;
+            case CMD_RESET_DEFAULTS:
+                for (int i = 0; i < P_COUNT; ++i) applyParam(i, kDefaultParams[i]);
+                pitchBend_ = 1.f;
+                break;
 
             case CMD_NOTE_ON: {
                 if (c.a < 0 || c.a > 127) break;
@@ -731,21 +755,8 @@ private:
     void drainCommands() { Cmd c; while (queue_.pop(c)) applyCmd(c); }
 
     float sr_ = 48000.f;
-    // Defaults match the "Glass Bass" mockup.
-    float p_[P_COUNT] = {
-        0.80f, 0.40f, 0.25f,         // fm depth, harmonic, feedback
-        0.45f, 0.35f, 0.55f,         // cutoff, reso, env amt
-        0.25f, 0.45f, 0.70f,         // fx mix, fx param, volume
-        0.02f, 0.30f, 0.20f, 0.20f,  // A D S R
-        0.30f, 0.15f,                // lfo rate, depth
-        0.46f,                       // gate (~0.75 step)
-        120.f, 0.f, (float)FX_DELAY,  // tempo, algorithm, fx type
-        0.67f, 1.0f,                  // reverb tone, width
-        0.67f, 0.32f, 1.0f,           // delay time (dotted 1/8), tone, ping-pong
-        0.73f, 0.67f                  // phaser depth, intensity
-    };
+    float p_[P_COUNT] = {};  // filled from kDefaultParams in the constructor
     int algorithm_ = 0;
-    int fxType_ = FX_DELAY;
 
     SpscQueue<1024> queue_;
     std::atomic<int> playhead_{-1};
@@ -758,7 +769,8 @@ private:
     Noise noise_;
     std::array<DrumVoice, kDrumLanes> drums_{};
     float lfoPhase_ = 0.f;
-    float smCut_ = 0.45f, smDepth_ = 0.8f, smVol_ = 0.7f, smMix_ = 0.25f;
+    float smCut_ = 0.45f, smDepth_ = 0.8f, smVol_ = 0.7f;
+    float smDly_ = 0.f, smRev_ = 0.f, smPh_ = 0.f;
 
     std::vector<float> delayL_, delayR_;
     size_t delayPos_ = 0;

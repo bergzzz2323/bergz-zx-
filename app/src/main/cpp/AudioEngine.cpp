@@ -138,6 +138,14 @@ JNIEXPORT void JNICALL JNI_FN(nativeSetStepNote)(JNIEnv*, jobject, jint step, ji
     post(CMD_STEP_NOTE, step, note, (float)slot);
 }
 
+JNIEXPORT void JNICALL JNI_FN(nativeResetDefaults)(JNIEnv*, jobject) {
+    post(CMD_RESET_DEFAULTS, 0, 0, 0.f);
+}
+
+JNIEXPORT jfloat JNICALL JNI_FN(nativeDefaultParam)(JNIEnv*, jobject, jint id) {
+    return (id >= 0 && id < P_COUNT) ? kDefaultParams[id] : 0.f;
+}
+
 JNIEXPORT void JNICALL JNI_FN(nativeClearPattern)(JNIEnv*, jobject) {
     post(CMD_CLEAR_PATTERN, 0, 0, 0.f);
 }

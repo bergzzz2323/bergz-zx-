@@ -82,8 +82,12 @@ class BergzMidiReceiver : MidiReceiver() {
             77 to P.LFO_RATE,     // WOBBLE SPD
             78 to P.LFO_DEPTH,    // WOBBLE
             80 to P.GATE,         // LENGTH
-            91 to P.FX_MIX,       // FX AMOUNT
-            93 to P.FX_PARAM,     // FX SIZE / FEEDBACK / RATE
+            91 to P.REV_MIX,      // reverb amount
+            92 to P.REV_SIZE,
+            94 to P.DLY_MIX,      // delay amount
+            95 to P.DLY_FB,
+            93 to P.PH_MIX,       // phaser amount
+            90 to P.PH_RATE,
             7 to P.VOLUME,
         )
     }

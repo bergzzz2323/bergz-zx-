@@ -41,7 +41,7 @@ class MainActivity : ComponentActivity() {
         }
 
         state.audioOk = NativeEngine.ensureStarted()
-        state.loadPreset(0)
+        state.startFresh()
 
         midi = MidiConnections(this)
         midi.start()

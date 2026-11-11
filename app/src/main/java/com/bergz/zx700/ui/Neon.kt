@@ -33,8 +33,12 @@ val PARAM_NAMES: Map<Int, ParamName> = mapOf(
     P.CUTOFF to ParamName("TONE", "CUTOFF"),
     P.RESO to ParamName("PEAK", "RESONANCE"),
     P.ENV_AMT to ParamName("SWEEP", "FILTER ENV"),
-    P.FX_MIX to ParamName("AMOUNT", "FX MIX"),
-    P.FX_PARAM to ParamName("SIZE", "FX PARAM"),
+    P.DLY_MIX to ParamName("DELAY", "DELAY AMOUNT"),
+    P.DLY_FB to ParamName("FEEDBK", "DELAY FEEDBACK"),
+    P.REV_MIX to ParamName("REVERB", "REVERB AMOUNT"),
+    P.REV_SIZE to ParamName("SIZE", "REVERB SIZE"),
+    P.PH_MIX to ParamName("PHASER", "PHASER AMOUNT"),
+    P.PH_RATE to ParamName("RATE", "PHASER RATE"),
     P.VOLUME to ParamName("VOLUME", "MASTER"),
     P.ATTACK to ParamName("FADE IN", "ATTACK"),
     P.DECAY to ParamName("DECAY", "DECAY"),
@@ -48,15 +52,6 @@ val PARAM_NAMES: Map<Int, ParamName> = mapOf(
     P.DLY_TONE to ParamName("TONE", "DELAY TONE"),
     P.PH_DEPTH to ParamName("DEPTH", "SWEEP RANGE"),
     P.PH_FEEDBACK to ParamName("INTENSITY", "PHASER FEEDBACK"),
-)
-
-data class Scale(val name: String, val intervals: List<Int>)
-
-val SCALES = listOf(
-    Scale("MINOR", listOf(0, 2, 3, 5, 7, 8, 10)),
-    Scale("MAJOR", listOf(0, 2, 4, 5, 7, 9, 11)),
-    Scale("DORIAN", listOf(0, 2, 3, 5, 7, 9, 10)),
-    Scale("PENTA", listOf(0, 3, 5, 7, 10)),
 )
 
 private val NOTE_NAMES = listOf("C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B")

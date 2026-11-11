@@ -2,6 +2,7 @@ package com.bergz.zx700.ui
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
@@ -20,6 +21,14 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.grid.rememberLazyGridState
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Slider
@@ -37,9 +46,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shadow
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -69,21 +80,13 @@ fun PanelScreen(state: BergzState) {
         Header(state)
         Row(Modifier.fillMaxWidth().weight(1.15f), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Display(state, Modifier.width(214.dp).fillMaxHeight())
-            Section("SOUND · FM", Modifier.weight(3f).fillMaxHeight()) {
+            Section("SOUND · FM", Modifier.weight(2.9f).fillMaxHeight()) {
                 K(state, P.FM_DEPTH, Neon.Pink); K(state, P.HARMONIC, Neon.Blue); K(state, P.FEEDBACK, Neon.Blue)
             }
-            Section("TONE · FILTER", Modifier.weight(3f).fillMaxHeight()) {
+            Section("TONE · FILTER", Modifier.weight(2.9f).fillMaxHeight()) {
                 K(state, P.CUTOFF, Neon.Blue); K(state, P.RESO, Neon.Blue); K(state, P.ENV_AMT, Neon.Blue)
             }
-            Section(
-                "FX · ${NativeEngine.FX_NAMES[state.fxType]} ▸",
-                Modifier.weight(2.3f).fillMaxHeight(),
-                onTitleClick = { state.cycleFx() },
-                onTitleDoubleClick = { state.openFxSettings() },
-            ) {
-                K(state, P.FX_MIX, Neon.Purple)
-                K(state, P.FX_PARAM, Neon.Purple, NativeEngine.FX_PARAM_NAMES[state.fxType])
-            }
+            FxSection(state, Modifier.weight(2.7f).fillMaxHeight())
             Section("OUT", Modifier.weight(1.2f).fillMaxHeight()) { K(state, P.VOLUME, Neon.Pink, size = 54) }
         }
         Row(Modifier.fillMaxWidth().weight(1.15f), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -104,6 +107,7 @@ fun PanelScreen(state: BergzState) {
     }
     if (state.fxSettingsOpen) FxSettings(state)
     if (state.browserOpen) PatchBrowser(state)
+    if (state.keyPickerOpen) KeyPicker(state)
     }
 }
 
@@ -132,10 +136,12 @@ private fun FxSettings(state: BergzState) {
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
-                    "${NativeEngine.FX_NAMES[state.fxType]} · SETTINGS", color = Neon.Pink, fontSize = 13.sp,
+                    "${state.fx.name} · SETTINGS", color = Neon.Pink, fontSize = 13.sp,
                     fontWeight = FontWeight.ExtraBold, letterSpacing = 2.sp,
                     style = TextStyle(shadow = glow(Neon.Pink)), modifier = Modifier.weight(1f),
                 )
+                FxLight(state.fxOn(state.fxSelected), big = true) { state.toggleFx() }
+                Spacer(Modifier.width(10.dp))
                 HwButton("", Modifier.width(76.dp), active = true, activeColor = Neon.Blue, height = 30.dp, caption = "DONE") {
                     state.closeFxSettings()
                 }
@@ -146,17 +152,18 @@ private fun FxSettings(state: BergzState) {
                 horizontalArrangement = Arrangement.SpaceEvenly,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                when (state.fxType) {
-                    0 -> {  // reverb
-                        K(state, P.FX_MIX, Neon.Purple, size = 56)
-                        K(state, P.FX_PARAM, Neon.Purple, "SIZE", size = 56)
-                        K(state, P.REV_TONE, Neon.Blue, size = 56)
-                        K(state, P.REV_WIDTH, Neon.Blue, size = 56)
+                val off = !state.fxOn(state.fxSelected)
+                when (state.fxSelected) {
+                    1 -> {  // reverb
+                        K(state, P.REV_MIX, Neon.Purple, "AMOUNT", size = 56, dim = off)
+                        K(state, P.REV_SIZE, Neon.Purple, "SIZE", size = 56, dim = off)
+                        K(state, P.REV_TONE, Neon.Blue, size = 56, dim = off)
+                        K(state, P.REV_WIDTH, Neon.Blue, size = 56, dim = off)
                     }
-                    1 -> {  // delay
-                        K(state, P.FX_MIX, Neon.Purple, size = 52)
-                        K(state, P.FX_PARAM, Neon.Purple, "FEEDBACK", size = 52)
-                        K(state, P.DLY_TONE, Neon.Blue, size = 52)
+                    0 -> {  // delay
+                        K(state, P.DLY_MIX, Neon.Purple, "AMOUNT", size = 52, dim = off)
+                        K(state, P.DLY_FB, Neon.Purple, "FEEDBACK", size = 52, dim = off)
+                        K(state, P.DLY_TONE, Neon.Blue, size = 52, dim = off)
                         Column(Modifier.width(150.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                             PanelLabel("TIME")
                             Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -174,15 +181,15 @@ private fun FxSettings(state: BergzState) {
                         }
                     }
                     else -> {  // phaser
-                        K(state, P.FX_MIX, Neon.Purple, size = 56)
-                        K(state, P.FX_PARAM, Neon.Purple, "RATE", size = 56)
-                        K(state, P.PH_DEPTH, Neon.Blue, size = 56)
-                        K(state, P.PH_FEEDBACK, Neon.Blue, size = 56)
+                        K(state, P.PH_MIX, Neon.Purple, "AMOUNT", size = 56, dim = off)
+                        K(state, P.PH_RATE, Neon.Purple, "RATE", size = 56, dim = off)
+                        K(state, P.PH_DEPTH, Neon.Blue, size = 56, dim = off)
+                        K(state, P.PH_FEEDBACK, Neon.Blue, size = 56, dim = off)
                     }
                 }
             }
             Text(
-                "Tap the FX name to switch effect · double-tap for these settings",
+                "Tap the FX name to switch effect · the light turns it on/off · effects that are on all play together",
                 color = Neon.Muted, fontSize = 9.sp,
             )
         }
@@ -191,11 +198,11 @@ private fun FxSettings(state: BergzState) {
 
 /** A knob bound to an engine parameter, with its friendly label. */
 @Composable
-private fun K(state: BergzState, id: Int, ring: Color, labelOverride: String? = null, size: Int = 46) {
+private fun K(state: BergzState, id: Int, ring: Color, labelOverride: String? = null, size: Int = 46, dim: Boolean = false) {
     Knob(
         label = labelOverride ?: PARAM_NAMES[id]?.friendly ?: "",
         value = state.params[id],
-        ring = ring,
+        ring = if (dim) ring.copy(alpha = 0.3f) else ring,
         knobSize = size.dp,
         onTouch = { state.touch(id, it) },
         onChange = { state.setParam(id, it) },
@@ -215,7 +222,10 @@ private fun Header(state: BergzState) {
             style = TextStyle(shadow = glow(Neon.Blue)),
         )
         Spacer(Modifier.width(10.dp))
-        Text("FM MOTION SYNTHESIZER", color = Neon.Dim, fontSize = 8.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 2.sp)
+        Text(
+            "FM MOTION SYNTHESIZER", color = Neon.Purple, fontSize = 8.sp, fontWeight = FontWeight.Bold, letterSpacing = 2.sp,
+            style = TextStyle(shadow = glow(Neon.Purple)),
+        )
         Spacer(Modifier.width(12.dp))
         Box(
             Modifier.weight(1f).height(2.dp)
@@ -261,14 +271,18 @@ private fun Display(state: BergzState, modifier: Modifier) {
         verticalArrangement = Arrangement.SpaceBetween,
     ) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-            Text("${state.presetLabel}${if (state.edited) "*" else ""}", style = mono, fontSize = 11.sp)
-            Text("ALG ${(state.params[P.ALGORITHM] + 1).toInt()} · C ${state.scale.name}", style = mono, fontSize = 11.sp)
+            Text("${state.presetLabel}${if (state.edited) "*" else ""}", style = mono, fontSize = 11.sp, maxLines = 1)
+            val step = if (state.playhead >= 0) "%02d".format(state.playhead + 1) else "--"
+            Text("ALG ${(state.params[P.ALGORITHM] + 1).toInt()} · $step/16", style = mono, fontSize = 11.sp, maxLines = 1)
         }
         Text(state.presetName, style = mono, fontSize = 22.sp, fontWeight = FontWeight.Bold, maxLines = 1)
         Text(state.message, style = mono, fontSize = 10.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-            val step = if (state.playhead >= 0) "%02d/16".format(state.playhead + 1) else "--/16"
-            Text("STEP $step", style = mono, fontSize = 11.sp)
+            Text(
+                state.keyScaleName, style = mono.copy(color = Neon.Pink, shadow = Shadow(Neon.Pink, blurRadius = 10f)),
+                fontSize = 11.sp, maxLines = 1,
+                modifier = Modifier.clickable { state.openKeyPicker() },
+            )
             Text(if (state.externalSync) "EXT ${state.tempo} BPM" else "${state.tempo} BPM", style = mono, fontSize = 11.sp)
         }
     }
@@ -280,7 +294,7 @@ private fun NavCluster(state: BergzState, modifier: Modifier) {
         Column(Modifier.weight(1f).fillMaxHeight(), verticalArrangement = Arrangement.SpaceEvenly) {
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 HwButton(if (state.shift) "NEXT" else "PATCH", Modifier.weight(1f), caption = "☰") { state.patchPressed() }
-                HwButton(if (state.shift) "SCALE" else "ALGO", Modifier.weight(1f), caption = "▸") { state.algoOrScale() }
+                HwButton(if (state.shift) "KEY" else "ALGO", Modifier.weight(1f), caption = "▸") { state.algoOrKey() }
             }
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 HwButton("MUTATE", Modifier.weight(1f), activeColor = Neon.Blue, caption = "✦") { state.mutate() }
@@ -375,27 +389,24 @@ private fun Steps(state: BergzState, modifier: Modifier) {
     }
 }
 
-/** Patch browser: categories along the top, that category's sounds below. Tap to hear it. */
+/**
+ * Patch browser: categories down the left, that category's sounds on the right.
+ * Both lists scroll, every tile is a full-size touch target, and nothing is cut off.
+ * Tap a sound to hear it straight away; DONE or tap outside to close.
+ */
 @Composable
 private fun PatchBrowser(state: BergzState) {
     val shape = RoundedCornerShape(14.dp)
-    Box(
-        Modifier
-            .fillMaxSize()
-            .background(Color.Black.copy(alpha = 0.55f))
-            .clickable(remember { MutableInteractionSource() }, indication = null) { state.closeBrowser() },
-        contentAlignment = Alignment.TopCenter,
-    ) {
+    Overlay(onDismiss = { state.closeBrowser() }) {
         Column(
             Modifier
-                .padding(top = 24.dp)
-                .fillMaxWidth(0.8f)
-                .fillMaxHeight(0.72f)
+                .fillMaxWidth(0.94f)
+                .fillMaxHeight(0.94f)
                 .shadow(16.dp, shape, ambientColor = Neon.Blue, spotColor = Neon.Blue)
                 .background(Neon.Panel, shape)
                 .border(1.dp, Neon.Blue, shape)
                 .clickable(remember { MutableInteractionSource() }, indication = null) { }
-                .padding(horizontal = 16.dp, vertical = 10.dp),
+                .padding(horizontal = 14.dp, vertical = 10.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -405,39 +416,233 @@ private fun PatchBrowser(state: BergzState) {
                 )
                 Spacer(Modifier.width(12.dp))
                 Text(
-                    state.presetName, color = Neon.Pink, fontSize = 12.sp, fontWeight = FontWeight.Bold,
-                    fontFamily = FontFamily.Monospace, modifier = Modifier.weight(1f),
+                    "NOW: ${state.presetName}", color = Neon.Pink, fontSize = 12.sp, fontWeight = FontWeight.Bold,
+                    fontFamily = FontFamily.Monospace, maxLines = 1, modifier = Modifier.weight(1f),
                 )
-                HwButton("", Modifier.width(76.dp), active = true, activeColor = Neon.Blue, height = 30.dp, caption = "DONE") {
+                HwButton("", Modifier.width(84.dp), active = true, activeColor = Neon.Blue, height = 32.dp, caption = "DONE") {
                     state.closeBrowser()
                 }
             }
-            // categories, two rows of five
-            state.categories.chunked(5).forEachIndexed { row, cats ->
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    cats.forEachIndexed { col, name ->
-                        val idx = row * 5 + col
-                        HwButton(
-                            "", Modifier.weight(1f), active = state.browserCategory == idx,
-                            activeColor = Neon.Purple, height = 30.dp, caption = name,
+            Box(Modifier.fillMaxWidth().height(1.dp).background(Neon.Line))
+            Row(Modifier.fillMaxWidth().weight(1f), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                // categories
+                val catList = rememberLazyListState(initialFirstVisibleItemIndex = maxOf(0, state.browserCategory - 2))
+                LazyColumn(
+                    state = catList,
+                    modifier = Modifier.width(118.dp).fillMaxHeight(),
+                    verticalArrangement = Arrangement.spacedBy(6.dp),
+                    contentPadding = PaddingValues(bottom = 8.dp),
+                ) {
+                    itemsIndexed(state.categories) { idx, name ->
+                        val count = state.library.count { it.category == idx }
+                        BrowserTile(
+                            title = name, subtitle = "$count sounds",
+                            selected = state.browserCategory == idx, color = Neon.Purple, height = 44,
                         ) { state.browserCategory = idx }
                     }
                 }
-            }
-            Box(Modifier.fillMaxWidth().height(1.dp).background(Neon.Line))
-            // sounds in the chosen category, three per row
-            val sounds = state.library.filter { it.category == state.browserCategory }
-            sounds.chunked(3).forEach { rowItems ->
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    rowItems.forEach { info ->
-                        HwButton(
-                            "", Modifier.weight(1f), active = state.presetIndex == info.index,
-                            activeColor = Neon.Pink, height = 36.dp, caption = info.name,
+                Box(Modifier.width(1.dp).fillMaxHeight().background(Neon.Line))
+                // sounds in the chosen category
+                val sounds = state.library.filter { it.category == state.browserCategory }
+                val current = sounds.indexOfFirst { it.index == state.presetIndex }
+                val grid = rememberLazyGridState(initialFirstVisibleItemIndex = maxOf(0, current))
+                LazyVerticalGrid(
+                    columns = GridCells.Fixed(3),
+                    state = grid,
+                    modifier = Modifier.weight(1f).fillMaxHeight(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                    contentPadding = PaddingValues(bottom = 12.dp),
+                ) {
+                    items(sounds, key = { it.index }) { info ->
+                        BrowserTile(
+                            title = info.name,
+                            subtitle = state.categories.getOrElse(info.category) { "" },
+                            selected = state.presetIndex == info.index, color = Neon.Pink, height = 56,
                         ) { state.loadPreset(info.index) }
                     }
-                    repeat(3 - rowItems.size) { Spacer(Modifier.weight(1f)) }
                 }
             }
         }
+    }
+}
+
+/** Key & scale picker: 12 keys across the top, every scale below. The pattern moves with you. */
+@Composable
+private fun KeyPicker(state: BergzState) {
+    val shape = RoundedCornerShape(14.dp)
+    Overlay(onDismiss = { state.closeKeyPicker() }) {
+        Column(
+            Modifier
+                .fillMaxWidth(0.9f)
+                .fillMaxHeight(0.9f)
+                .shadow(16.dp, shape, ambientColor = Neon.Pink, spotColor = Neon.Pink)
+                .background(Neon.Panel, shape)
+                .border(1.dp, Neon.Pink, shape)
+                .clickable(remember { MutableInteractionSource() }, indication = null) { }
+                .padding(horizontal = 14.dp, vertical = 10.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    "KEY & SCALE", color = Neon.Pink, fontSize = 13.sp, fontWeight = FontWeight.ExtraBold,
+                    letterSpacing = 2.sp, style = TextStyle(shadow = glow(Neon.Pink)),
+                )
+                Spacer(Modifier.width(12.dp))
+                Text(
+                    state.keyScaleName, color = Neon.Blue, fontSize = 12.sp, fontWeight = FontWeight.Bold,
+                    fontFamily = FontFamily.Monospace, maxLines = 1, modifier = Modifier.weight(1f),
+                )
+                HwButton("", Modifier.width(84.dp), active = true, activeColor = Neon.Blue, height = 32.dp, caption = "DONE") {
+                    state.closeKeyPicker()
+                }
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+                KEY_NAMES.forEachIndexed { i, name ->
+                    BrowserTile(
+                        title = name, subtitle = null, selected = state.key == i, color = Neon.Blue,
+                        height = 44, modifier = Modifier.weight(1f),
+                    ) { state.setKeyScale(i, state.scaleIndex) }
+                }
+            }
+            Box(Modifier.fillMaxWidth().height(1.dp).background(Neon.Line))
+            LazyVerticalGrid(
+                columns = GridCells.Fixed(4),
+                modifier = Modifier.fillMaxWidth().weight(1f),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+                contentPadding = PaddingValues(bottom = 12.dp),
+            ) {
+                items(SCALES.indices.toList()) { i ->
+                    BrowserTile(
+                        title = SCALES[i].name, subtitle = null, selected = state.scaleIndex == i,
+                        color = Neon.Pink, height = 46,
+                    ) { state.setKeyScale(state.key, i) }
+                }
+            }
+        }
+    }
+}
+
+/** Dimmed full-screen backdrop; tapping it closes the pop-up. */
+@Composable
+private fun Overlay(onDismiss: () -> Unit, content: @Composable () -> Unit) {
+    Box(
+        Modifier
+            .fillMaxSize()
+            .background(Color.Black.copy(alpha = 0.6f))
+            .clickable(remember { MutableInteractionSource() }, indication = null) { onDismiss() },
+        contentAlignment = Alignment.Center,
+    ) { content() }
+}
+
+/** A big, clear tile for lists: neon border and glow when selected. */
+@Composable
+private fun BrowserTile(
+    title: String,
+    subtitle: String?,
+    selected: Boolean,
+    color: Color,
+    height: Int,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit,
+) {
+    val shape = RoundedCornerShape(8.dp)
+    Column(
+        modifier
+            .fillMaxWidth()
+            .height(height.dp)
+            .let { if (selected) it.shadow(10.dp, shape, ambientColor = color, spotColor = color) else it }
+            .background(if (selected) color.copy(alpha = 0.22f) else Neon.Body, shape)
+            .border(if (selected) 2.dp else 1.dp, if (selected) color else Neon.Line, shape)
+            .clickable(remember { MutableInteractionSource() }, indication = null) { onClick() }
+            .padding(horizontal = 6.dp),
+        verticalArrangement = Arrangement.Center,
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Text(
+            title, color = if (selected) Color.White else Neon.Text, fontSize = 12.sp,
+            fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis, textAlign = TextAlign.Center,
+        )
+        if (subtitle != null) {
+            Text(subtitle, color = Neon.Muted, fontSize = 8.sp, letterSpacing = 1.sp, maxLines = 1)
+        }
+    }
+}
+
+/**
+ * FX section: tap the effect name to show the next effect's knobs, double-tap
+ * for its settings. The light turns the shown effect on or off; the three dots
+ * show which effects are on, so you can see what is stacked.
+ */
+@Composable
+private fun FxSection(state: BergzState, modifier: Modifier) {
+    val shape = RoundedCornerShape(10.dp)
+    val on = state.fxOn(state.fxSelected)
+    Column(
+        modifier
+            .shadow(8.dp, shape, ambientColor = Neon.Purple, spotColor = Neon.Purple)
+            .background(Neon.Panel, shape)
+            .border(1.dp, Neon.Purple, shape)
+            .padding(horizontal = 6.dp, vertical = 4.dp),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                "${state.fx.name} ▸", color = Neon.Pink, fontSize = 9.sp, fontWeight = FontWeight.ExtraBold,
+                letterSpacing = 1.5.sp, maxLines = 1,
+                modifier = Modifier
+                    .weight(1f)
+                    .pointerInput(Unit) {
+                        detectTapGestures(onTap = { state.cycleFx() }, onDoubleTap = { state.openFxSettings() })
+                    },
+            )
+            NativeEngine.FX.indices.forEach { i ->
+                val lit = state.fxOn(i)
+                Box(
+                    Modifier
+                        .padding(horizontal = 1.5.dp)
+                        .size(if (i == state.fxSelected) 6.dp else 4.dp)
+                        .background(if (lit) Neon.Blue else Neon.LedOff, CircleShape),
+                )
+            }
+            Spacer(Modifier.width(4.dp))
+            FxLight(on) { state.toggleFx() }
+        }
+        Box(Modifier.fillMaxWidth().padding(top = 2.dp).height(1.dp).background(Neon.Line))
+        Row(
+            Modifier.fillMaxSize(),
+            horizontalArrangement = Arrangement.SpaceEvenly,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            K(state, state.fx.mix, Neon.Purple, "AMOUNT", dim = !on)
+            K(state, state.fx.param, Neon.Purple, state.fx.paramName, dim = !on)
+        }
+    }
+}
+
+/** Small on/off light: glows blue when the effect is on. */
+@Composable
+private fun FxLight(on: Boolean, big: Boolean = false, onClick: () -> Unit) {
+    val shape = RoundedCornerShape(50)
+    Row(
+        Modifier
+            .height(if (big) 32.dp else 22.dp)
+            .background(if (on) Neon.Blue.copy(alpha = 0.18f) else Neon.Body, shape)
+            .border(1.dp, if (on) Neon.Blue else Neon.Line, shape)
+            .clickable(remember { MutableInteractionSource() }, indication = null) { onClick() }
+            .padding(horizontal = if (big) 10.dp else 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(
+            Modifier
+                .size(if (big) 10.dp else 8.dp)
+                .let { if (on) it.shadow(6.dp, CircleShape, ambientColor = Neon.Blue, spotColor = Neon.Blue) else it }
+                .background(if (on) Neon.Blue else Neon.LedOff, CircleShape),
+        )
+        Spacer(Modifier.width(4.dp))
+        Text(
+            if (on) "ON" else "OFF", color = if (on) Neon.Blue else Neon.Muted,
+            fontSize = if (big) 11.sp else 8.sp, fontWeight = FontWeight.Bold,
+        )
     }
 }

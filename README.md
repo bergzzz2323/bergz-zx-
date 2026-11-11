@@ -21,19 +21,37 @@ The app opens full-screen in landscape. Use headphones or a speaker for the bass
 | Control | What it does |
 |---|---|
 | **PLAY / STOP** | Start and stop the 16-step pattern |
-| **PATCH** | Opens the patch browser: pick a category, tap a sound to hear it. SHIFT + PATCH = next patch |
+| **PATCH** | Opens the patch browser: categories on the left, sounds on the right (both scroll). Tap a sound to hear it. SHIFT + PATCH = next patch |
 | **MUTATE ✦** | New variation of the current sound, kept musical. Tap repeatedly |
 | **SHIFT + MUTATE** | New melody on the same steps, locked to the scale |
-| **ALGO** | Cycle the FM algorithm (SHIFT + ALGO = change scale) |
+| **ALGO** | Cycle the FM algorithm. SHIFT + ALGO (or tap the pink key name on the display) opens **KEY & SCALE** |
 | **Knobs** | Drag up/down. Display shows the friendly + technical name |
-| **FX title** | Tap "FX · REVERB ▸" to switch Reverb / Delay / Phaser. Double-tap for that effect's settings (Reverb: tone, width · Delay: time, tone, ping-pong · Phaser: depth, intensity) |
+| **FX name** | Tap "DELAY ▸" to show the next effect's knobs (Delay → Reverb → Phaser). Double-tap for that effect's settings (Delay: time, tone, ping-pong · Reverb: tone, width · Phaser: depth, intensity) |
+| **FX light** | Turns the shown effect on or off. Effects that are on keep playing when you switch to another, so all three can be stacked. The three dots show which are on. Delay is on at start-up; reverb and phaser are off |
 | **REC** | Motion record: while it's lit, every knob you move is recorded into the loop and replays every bar. Overdub more knobs on later passes |
 | **CLEAR** | Erase all recorded motion |
-| **Scene A / B + fader** | Morph between two sound snapshots (SHIFT + A/B stores the current sound). Morphing while REC is lit records the morph |
+| **Scene A / B + fader** | Morph between two versions of the sound. With the fader fully left, knob tweaks change A; fully right, they change B; in between, both move together. SHIFT + A/B copies the current sound into that scene. Morphing while REC is lit records the morph |
 | **Step keys** | Synth: tap empty = add note, tap again = select (pink edge), tap selected = remove |
 | **DATA wheel** (bottom left) | With a step selected: move its note through the scale. Otherwise: tempo |
 
-48 original patches in 10 categories: Lead, Pad, Bass, Strings, Stabs, Plonk, Bleep, FX, Trippy, Cosmic.
+66 original patches in 13 categories: Lead, Pad, Bass, Strings, Stabs, Plonk, Bleep, FX, Trippy, Cosmic,
+plus **80s** (classic 1980s-inspired), **90s** (dance, rave and acid house) and **20s** (techy trance and techno).
+
+## Keys and scales
+
+The app starts in **C Major**. KEY & SCALE offers all 12 keys and 17 scales: Major, Minor,
+Harmonic Minor, Melodic Minor, Dorian, Phrygian, Lydian, Mixolydian, Locrian, Major and
+Minor Pentatonic, Blues, Whole Tone, Hungarian, Double Harmonic, Japanese and Chromatic.
+New notes, the DATA wheel and SHIFT + MUTATE stay in the chosen key and scale. Changing
+key or scale moves the current pattern with it, note by note, so a minor 7th chord
+becomes a major 7th in a major scale. Patches load into whatever key and scale is set.
+
+## Session memory
+
+Tweaks you make to a patch (both scenes, the fader position, the steps, algorithm and
+tempo) are remembered while the app is open, so you can switch patches and come back to
+your version. Close and reopen the app and every patch, the key and the FX lights are
+back to their defaults. Recorded knob motion is cleared when you change patch.
 
 ## MIDI and USB-C
 
@@ -63,7 +81,10 @@ What Bergz responds to:
 | CC 74 / 71 / 76 | Tone / Peak / Sweep |
 | CC 73 / 75 / 79 / 72 | Fade in / Decay / Hold / Tail |
 | CC 77 / 78 / 80 | Wobble speed / Wobble / Length |
-| CC 91 / 93 / 7 | FX amount / FX size-feedback-rate / Volume |
+| CC 94 / 95 | Delay amount / feedback |
+| CC 91 / 92 | Reverb amount / size |
+| CC 93 / 90 | Phaser amount / rate |
+| CC 7 | Volume |
 | CC 120, 123 | All notes off |
 
 To play only Nightstepper's notes, leave Bergz stopped (or clear its steps).

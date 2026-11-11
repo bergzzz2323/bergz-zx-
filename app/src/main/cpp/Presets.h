@@ -13,11 +13,13 @@
 namespace bergz {
 
 // Browser categories, in display order.
-constexpr int kCategories = 10;
+constexpr int kCategories = 13;
 constexpr const char* kCategoryNames[kCategories] = {
     "LEAD", "PAD", "BASS", "STRINGS", "STABS", "PLONK", "BLEEP", "FX", "TRIPPY", "COSMIC",
+    "80s", "90s", "20s",
 };
-enum Cat { LEAD, PAD, BASS, STRINGS, STABS, PLONK, BLEEP, FXS, TRIPPY, COSMIC };
+// 80s: classic 1980s-inspired. 90s: dance, rave and acid house. 20s: techy trance and techno.
+enum Cat { LEAD, PAD, BASS, STRINGS, STABS, PLONK, BLEEP, FXS, TRIPPY, COSMIC, EIGHTIES, NINETIES, TWENTIES };
 
 struct Preset {
     const char* name;
@@ -29,10 +31,14 @@ struct Preset {
 namespace detail {
 using Chords = std::initializer_list<std::pair<int, std::initializer_list<int>>>;
 
-// Short-hand for the 19 preset params, in this order:
+// Short-hand for a patch, in this order:
 //  fm, character(harmonic), grit(feedback), tone(cutoff), peak(reso), sweep(env amt),
 //  fx amount, fx size/feedback/rate, volume, fade in, decay, hold, tail,
-//  wobble speed, wobble, length(gate), tempo, algorithm(0-3), fx type
+//  wobble speed, wobble, length(gate), tempo, algorithm(0-3), featured effect.
+// "fx amount / fx size" go to the featured effect; the other two effects get
+// their default amounts. Which effects are switched on is up to the player.
+// Patterns are written in C natural minor and are conformed to the player's
+// chosen key and scale when loaded.
 struct S {
     float fm, ch, grit, tone, peak, sweep, fxAmt, fxPar, vol, a, d, s, r, lfoR, lfoD, gate, bpm;
     int alg, fx;
@@ -42,9 +48,18 @@ inline Preset make(const char* name, int cat, const S& v, Chords chords) {
     Preset x{};
     x.name = name;
     x.category = cat;
-    const float p[kPresetParams] = {v.fm, v.ch, v.grit, v.tone, v.peak, v.sweep, v.fxAmt, v.fxPar, v.vol,
-                                    v.a, v.d, v.s, v.r, v.lfoR, v.lfoD, v.gate, v.bpm, (float)v.alg, (float)v.fx};
-    for (int i = 0; i < kPresetParams; ++i) x.params[i] = p[i];
+    for (int i = 0; i < P_COUNT; ++i) x.params[i] = kDefaultParams[i];
+    auto& p = x.params;
+    p[P_FM_DEPTH] = v.fm; p[P_HARMONIC] = v.ch; p[P_FEEDBACK] = v.grit;
+    p[P_CUTOFF] = v.tone; p[P_RESO] = v.peak; p[P_ENV_AMT] = v.sweep; p[P_VOLUME] = v.vol;
+    p[P_ATTACK] = v.a; p[P_DECAY] = v.d; p[P_SUSTAIN] = v.s; p[P_RELEASE] = v.r;
+    p[P_LFO_RATE] = v.lfoR; p[P_LFO_DEPTH] = v.lfoD; p[P_GATE] = v.gate; p[P_TEMPO] = v.bpm;
+    p[P_ALGORITHM] = (float)v.alg; p[P_FX_TYPE] = (float)v.fx;
+    switch (v.fx) {
+        case FX_DELAY:  p[P_DLY_MIX] = v.fxAmt; p[P_DLY_FB] = v.fxPar; break;
+        case FX_REVERB: p[P_REV_MIX] = v.fxAmt; p[P_REV_SIZE] = v.fxPar; break;
+        case FX_PHASER: p[P_PH_MIX] = v.fxAmt; p[P_PH_RATE] = v.fxPar; break;
+    }
     for (auto& row : x.notes) for (int& n : row) n = -1;
     for (const auto& c : chords) {
         int slot = 0;
@@ -177,6 +192,51 @@ inline const std::vector<Preset>& presets() {
              {{0,{55,58,62,66}}}),
         make("SATELLITE", COSMIC, {.55f,.80f,.10f,.80f,.20f,.30f, .55f,.75f,.72f, .00f,.50f,.00f,.70f, .20f,.10f,.25f,84, 1,D},
              {{0,{91}},{2,{96}},{7,{94}},{11,{89}}}),
+
+        // ------------------------------------------------------------ 80s
+        make("CRYSTAL KEYS", EIGHTIES, {.45f,.20f,.05f,.75f,.10f,.30f, .40f,.25f,.80f, .00f,.55f,.20f,.35f, .58f,.06f,.70f,96, 2,P},
+             {{0,{48,55,58,62}},{6,{44,51,55,60}},{10,{46,53,58,62}},{14,{46,53,58}}}),
+        make("NEON SLAP", EIGHTIES, {.75f,.60f,.20f,.60f,.30f,.70f, .20f,.35f,.84f, .00f,.25f,.10f,.15f, .00f,.00f,.30f,112, 0,D},
+             {{0,{36}},{2,{48}},{3,{36}},{6,{46}},{7,{36}},{8,{39}},{10,{51}},{11,{41}},{13,{43}},{14,{55}}}),
+        make("MIAMI BRASS", EIGHTIES, {.70f,.20f,.45f,.55f,.20f,.55f, .40f,.65f,.70f, .06f,.40f,.70f,.30f, .55f,.08f,.50f,108, 0,R},
+             {{0,{48,55,60,63}},{3,{48,55,60,63}},{8,{46,53,58,62}},{11,{44,51,56,60}}}),
+        make("ARCADE BELLS", EIGHTIES, {.50f,.75f,.10f,.80f,.10f,.20f, .50f,.70f,.74f, .00f,.65f,.00f,.60f, .20f,.04f,.40f,104, 1,R},
+             {{0,{72}},{2,{75}},{4,{79}},{6,{84}},{8,{82}},{10,{79}},{12,{75}},{14,{77}}}),
+        make("SUNSET STRINGS", EIGHTIES, {.30f,.20f,.55f,.55f,.15f,.10f, .55f,.20f,.66f, .45f,.60f,.85f,.60f, .60f,.10f,.95f,92, 2,P},
+             {{0,{48,55,60,63}},{8,{44,51,56,63}}}),
+        make("VHS CHOIR", EIGHTIES, {.25f,.00f,.25f,.45f,.50f,.10f, .55f,.80f,.66f, .65f,.70f,.85f,.75f, .58f,.35f,1.0f,84, 3,R},
+             {{0,{55,60,63,67}},{8,{53,56,60,65}}}),
+
+        // ------------------------------------------------------------ 90s
+        make("ACID SQUELCH", NINETIES, {.50f,.20f,.25f,.25f,.85f,.90f, .25f,.45f,.82f, .00f,.20f,.00f,.12f, .25f,.05f,.30f,128, 0,D},
+             {{0,{36}},{1,{36}},{2,{48}},{3,{36}},{4,{39}},{5,{36}},{6,{46}},{7,{36}},
+              {8,{36}},{9,{51}},{10,{36}},{11,{43}},{12,{36}},{13,{48}},{14,{41}},{15,{36}}}),
+        make("ORGAN BASS", NINETIES, {.35f,.20f,.15f,.50f,.20f,.30f, .15f,.30f,1.00f, .00f,.30f,.40f,.12f, .00f,.00f,.30f,124, 2,D},
+             {{2,{36}},{3,{48}},{6,{36}},{7,{46}},{10,{36}},{11,{48}},{14,{34}},{15,{46}}}),
+        make("PIANO HOUSE", NINETIES, {.50f,.40f,.10f,.70f,.15f,.35f, .35f,.60f,.70f, .00f,.50f,.10f,.35f, .00f,.00f,.40f,122, 2,R},
+             {{0,{55,60,63,67}},{3,{55,60,63,67}},{6,{55,60,63,67}},{10,{53,56,60,65}},{13,{53,56,60,65}}}),
+        make("RAVE HOOVER", NINETIES, {.80f,.60f,.70f,.55f,.40f,.30f, .55f,.35f,.66f, .05f,.60f,.80f,.40f, .60f,.40f,.85f,132, 0,P},
+             {{0,{48,60}},{8,{46,58}},{12,{44,56}}}),
+        make("STAB 92", NINETIES, {.70f,.60f,.40f,.55f,.35f,.60f, .45f,.60f,.68f, .00f,.30f,.00f,.30f, .20f,.05f,.25f,130, 0,R},
+             {{0,{48,51,55,58}},{3,{48,51,55,58}},{6,{46,50,53,58}},{10,{44,48,51,55}},{12,{46,50,53,58}}}),
+        make("BLEEP TECHNO", NINETIES, {.20f,.00f,.00f,.90f,.10f,.10f, .35f,.50f,1.00f, .00f,.15f,.00f,.10f, .00f,.00f,.20f,126, 2,D},
+             {{0,{48}},{3,{60}},{6,{55}},{8,{48}},{10,{63}},{11,{60}},{14,{51}}}),
+
+        // ------------------------------------------------------------ 20s
+        make("TRANCE PLUCK", TWENTIES, {.50f,.40f,.15f,.60f,.30f,.60f, .45f,.65f,.78f, .00f,.25f,.00f,.25f, .00f,.00f,.30f,138, 2,D},
+             {{0,{60}},{1,{67}},{2,{72}},{3,{75}},{4,{60}},{5,{67}},{6,{72}},{7,{74}},
+              {8,{56}},{9,{63}},{10,{68}},{11,{72}},{12,{58}},{13,{65}},{14,{70}},{15,{74}}}),
+        make("TECHNO RUMBLE", TWENTIES, {.40f,.20f,.30f,.30f,.30f,.30f, .60f,.90f,.86f, .00f,.40f,.30f,.40f, .10f,.15f,.50f,132, 0,R},
+             {{2,{36}},{3,{36}},{6,{36}},{7,{36}},{10,{36}},{11,{36}},{14,{36}},{15,{36}}}),
+        make("HYPNO ARP", TWENTIES, {.60f,.80f,.20f,.45f,.60f,.50f, .45f,.20f,.76f, .00f,.25f,.00f,.20f, .10f,.40f,.30f,128, 0,P},
+             {{0,{48}},{1,{55}},{2,{63}},{3,{48}},{4,{55}},{5,{63}},{6,{48}},{7,{55}},
+              {8,{63}},{9,{48}},{10,{55}},{11,{63}},{12,{48}},{13,{55}},{14,{63}},{15,{51}}}),
+        make("MINIMAL BLIP", TWENTIES, {.30f,1.0f,.05f,.80f,.20f,.20f, .45f,.70f,1.00f, .00f,.12f,.00f,.10f, .00f,.00f,.20f,126, 2,D},
+             {{0,{72}},{5,{79}},{9,{75}},{14,{82}}}),
+        make("AFTERHOURS PAD", TWENTIES, {.30f,.40f,.20f,.45f,.25f,.15f, .55f,.40f,.66f, .60f,.70f,.85f,.80f, .12f,.30f,1.0f,124, 3,P},
+             {{0,{48,55,58,63}},{8,{44,51,55,60}}}),
+        make("METAL CLANG", TWENTIES, {.90f,1.0f,.60f,.65f,.30f,.40f, .50f,.75f,.72f, .00f,.30f,.00f,.40f, .00f,.00f,.20f,130, 1,R},
+             {{0,{48}},{6,{55}},{11,{51}}}),
     };
     return list;
 }
