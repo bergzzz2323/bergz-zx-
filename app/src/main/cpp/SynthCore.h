@@ -41,6 +41,7 @@ enum Param : int {
     P_DLY_TONE, P_DLY_PING,
     P_PH_DEPTH, P_PH_FEEDBACK,
     P_REV_ON, P_DLY_ON, P_PH_ON,       // on/off lights; stack any combination
+    P_TRANSPOSE,  // semitones -12..+12 added to the sequencer's notes (not live MIDI)
     P_COUNT
 };
 constexpr int kPresetParams = P_REV_TONE;  // presets store everything before this
@@ -62,6 +63,7 @@ constexpr float kDefaultParams[P_COUNT] = {
     0.67f, 0.32f, 1.0f,          // delay time (dotted 1/8), tone, ping-pong
     0.73f, 0.67f,                // phaser depth, intensity
     0.f, 1.f, 0.f,               // reverb off, delay ON, phaser off
+    0.f,                         // transpose
 };
 
 // Motion recording: knob moves are stored per parameter at 8 points per step.
@@ -583,7 +585,8 @@ private:
         bool any = false;
         for (int n = 0; n < kNotesPerStep; ++n) {
             if (notes_[i][n] < 0) continue;
-            allocVoice().noteOn(notes_[i][n], gateSamples, ++voiceOrder_);
+            const int note = std::max(0, std::min(127, notes_[i][n] + (int)p_[P_TRANSPOSE]));
+            allocVoice().noteOn(note, gateSamples, ++voiceOrder_);
             any = true;
         }
         if (any) { filterEnv_.gateOn(); filterGate_ = gateSamples; recountLive(); }
@@ -616,6 +619,8 @@ private:
             p_[id] = (float)std::max(0, std::min(FX_COUNT - 1, (int)v));
         } else if (id == P_TEMPO) {
             p_[id] = std::fmax(40.f, std::fmin(240.f, v));
+        } else if (id == P_TRANSPOSE) {
+            p_[id] = std::round(std::fmax(-12.f, std::fmin(12.f, v)));
         } else {
             p_[id] = std::fmax(0.f, std::fmin(1.f, v));
             if (id >= P_ATTACK && id <= P_RELEASE) applyEnvelopes();

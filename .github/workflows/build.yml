@@ -11,7 +11,7 @@ permissions:
 
 jobs:
   engine-test:
-    name: Engine tests (patches, MIDI, FX)
+    name: Engine tests (patches, MIDI, FX, jam)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -24,6 +24,8 @@ jobs:
           ./midi_test
           g++ -O2 -std=c++17 -Wall -I../app/src/main/cpp fx_test.cpp -o fx_test
           ./fx_test
+          g++ -O2 -std=c++17 -Wall -I../app/src/main/cpp jam_test.cpp -o jam_test
+          ./jam_test
       - uses: actions/upload-artifact@v4
         with:
           name: preset-demo-wav

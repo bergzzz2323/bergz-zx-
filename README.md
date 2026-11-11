@@ -1,8 +1,9 @@
-# Bergz ZX 700 — first test build (v0.1.0)
+# Bergz ZX 700 — test build v0.3
 
 A landscape FM groove synth for Android, tuned for the Pixel 9.
 Native C++ FM engine on Oboe (low-latency audio), Jetpack Compose panel UI.
-Look: black brushed steel with walnut end-cheeks, an amber display and amber/red accents.
+Look: black brushed steel with walnut end-cheeks, an amber display in a screwed-down black metal plate, and purple/mint accents.
+It runs edge to edge; both walnut cheeks are sized to the camera cut-out, so the camera sits on wood in either landscape direction.
 Synth-only: the built-in drum machine is switched off so the focus stays on FM sounds.
 
 ## Install on your Pixel 9
@@ -21,19 +22,20 @@ The app opens full-screen in landscape. Use headphones or a speaker for the bass
 
 | Control | What it does |
 |---|---|
-| **PLAY / STOP** | Start and stop the 16-step pattern |
+| **PLAY / STOP** (bottom left) | Start and stop the 16-step pattern. PLAY lights mint while it runs |
 | **PATCH** | Opens the patch browser: categories on the left, sounds on the right (both scroll). Tap a sound to hear it. SHIFT + PATCH = next patch |
 | **MUTATE ✦** | New variation of the current sound, kept musical. Tap repeatedly |
 | **SHIFT + MUTATE** | New melody on the same steps, locked to the scale |
-| **ALGO** | Cycle the FM algorithm. SHIFT + ALGO (or tap the pink key name on the display) opens **KEY & SCALE** |
+| **ALGO** | Cycle the FM algorithm. SHIFT + ALGO (or tap the key name on the display) opens **KEY & SCALE** |
 | **Knobs** | Drag up/down. Display shows the friendly + technical name |
 | **FX name** | Tap "DELAY ▸" to show the next effect's knobs (Delay → Reverb → Phaser). Double-tap for that effect's settings (Delay: time, tone, ping-pong · Reverb: tone, width · Phaser: depth, intensity) |
 | **FX light** | Turns the shown effect on or off. Effects that are on keep playing when you switch to another, so all three can be stacked. The three dots show which are on. Delay is on at start-up; reverb and phaser are off |
 | **REC** | Motion record: while it's lit, every knob you move is recorded into the loop and replays every bar. Overdub more knobs on later passes |
 | **CLEAR** | Erase all recorded motion |
-| **Scene A / B + fader** | Morph between two versions of the sound. With the fader fully left, knob tweaks change A; fully right, they change B; in between, both move together. SHIFT + A/B copies the current sound into that scene. Morphing while REC is lit records the morph |
-| **Step keys** | Synth: tap empty = add note, tap again = select (pink edge), tap selected = remove |
-| **DATA wheel** (bottom left) | With a step selected: move its note through the scale. Otherwise: tempo |
+| **SCENE MORPH** (right-hand column) | Morph between two versions of the sound with the tall fader: A at the bottom (purple), B at the top (mint). With the fader fully down, knob tweaks change A; fully up, they change B; in between, both move together. SHIFT + A/B copies the current sound into that scene. Morphing while REC is lit records the morph |
+| **TRANSPOSE** | Vertical fader, 0 in the middle, ±12 semitones; +1 / −1 buttons nudge it. Tap the readout or double-tap the fader to go back to 0. It moves the playing sequence, not live MIDI notes |
+| **Step keys** | Tap empty = add note, tap again = select (mint edge), tap selected = switch the step off. A switched-off step remembers its notes (shown dimmed): tap it again to bring them back. Mint lights = steps with notes, purple light = the playhead |
+| **DATA wheel** (bottom left) | With a step selected: move its note through the scale. Otherwise: tempo. Tempo starts at 120 BPM and only changes when you change it; patches never touch it |
 
 66 original patches in 13 categories: Lead, Pad, Bass, Strings, Stabs, Plonk, Bleep, FX, Trippy, Cosmic,
 plus **80s** (classic 1980s-inspired), **90s** (dance, rave and acid house) and **20s** (techy trance and techno).
@@ -49,10 +51,18 @@ becomes a major 7th in a major scale. Patches load into whatever key and scale i
 
 ## Session memory
 
-Tweaks you make to a patch (both scenes, the fader position, the steps, algorithm and
-tempo) are remembered while the app is open, so you can switch patches and come back to
-your version. Close and reopen the app and every patch, the key and the FX lights are
-back to their defaults. Recorded knob motion is cleared when you change patch.
+Tweaks you make to a patch (both scenes, the morph position and the algorithm) are
+remembered while the app is open, so you can switch patches and come back to your version.
+The steps go back to the patch's own pattern on a patch change, and remembered (switched-off)
+steps are forgotten. Tempo and transpose stay where you set them. Close and reopen the app
+and everything is back to its defaults (120 BPM, transpose 0, C Major, delay on).
+Recorded knob motion is cleared when you change patch.
+
+## Changing the theme colours
+
+The whole panel is built from two accent colours: the header line, the scene-morph fade,
+lights, lit buttons and the app icon. Change `AccentA` and `AccentB` in `ui/Neon.kt` and the
+matching `bergz_accent_a` / `bergz_accent_b` in `res/values/colors.xml`; everything follows.
 
 ## MIDI and USB-C
 

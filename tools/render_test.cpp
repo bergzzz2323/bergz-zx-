@@ -37,6 +37,7 @@ int main(int argc, char** argv) {
         SynthCore synth((float)sr);
         loadPreset(p, [&](const Cmd& c) { synth.command(c); });
         const float bpm = p.params[P_TEMPO];
+        synth.setParam(P_TEMPO, bpm);  // patches no longer set tempo; audition at the patch's own
         const int barFrames = (int)(sr * 60.0 / bpm * 4.0);
         const int bars = 4;
         const int total = barFrames * bars + sr;  // +1 s for tails

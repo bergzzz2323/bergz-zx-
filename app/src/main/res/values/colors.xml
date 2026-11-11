@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The two theme accents. Keep these in step with Theme.AccentA / Theme.AccentB in ui/Neon.kt:
+     the app icon's ring fade and Z are drawn from them, so changing both here re-colours the logo. -->
+<resources>
+    <color name="bergz_accent_a">#FFB07CFF</color>
+    <color name="bergz_accent_b">#FF3DF5B5</color>
+</resources>

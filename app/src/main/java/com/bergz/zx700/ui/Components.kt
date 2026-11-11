@@ -5,7 +5,6 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
-import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -59,6 +58,7 @@ import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlin.math.cos
+import kotlin.math.min
 import kotlin.math.sin
 
 // ============================================================ materials
@@ -92,7 +92,7 @@ fun Modifier.brushedSteel(): Modifier = drawWithCache {
 /** Walnut end-cheek, like the side panels on vintage synths. */
 @Composable
 fun WalnutCheek(modifier: Modifier = Modifier) {
-    Canvas(modifier.width(18.dp).fillMaxHeight()) {
+    Canvas(modifier.fillMaxHeight()) {
         val grain = Brush.linearGradient(
             listOf(Color(0xFF5B3820), Color(0xFF6E4729), Color(0xFF4C2F1A), Color(0xFF714A2B), Color(0xFF5B3820)),
             start = Offset(0f, 0f), end = Offset(19.dp.toPx(), 2.5.dp.toPx()), tileMode = TileMode.Repeated,
@@ -109,7 +109,7 @@ fun WalnutCheek(modifier: Modifier = Modifier) {
 
 /** A glass LED lens in a small metal bezel. [color] null = unlit. */
 @Composable
-fun LedLens(color: Color?, unlit: Color = Theme.AmberOff, diameter: Dp = 9.dp, modifier: Modifier = Modifier) {
+fun LedLens(color: Color?, unlit: Color = Theme.AccentBOff, diameter: Dp = 9.dp, modifier: Modifier = Modifier) {
     Canvas(modifier.size(diameter + 6.dp)) {
         val r = diameter.toPx() / 2f
         val c = center
@@ -151,7 +151,7 @@ fun PanelLabel(text: String, color: Color = Theme.Dim, modifier: Modifier = Modi
 @Composable
 fun SectionTitle(text: String, modifier: Modifier = Modifier) {
     Text(
-        text, color = Theme.Amber, fontSize = 11.5.sp, fontWeight = FontWeight.Bold, fontFamily = PanelFonts.Condensed,
+        text, color = Theme.AccentA, fontSize = 11.5.sp, fontWeight = FontWeight.Bold, fontFamily = PanelFonts.Condensed,
         letterSpacing = 1.8.sp, maxLines = 1, modifier = modifier,
     )
 }
@@ -298,11 +298,12 @@ private fun DrawScope.drawKnob(value: Float, ring: Color) {
 
 /** Big data wheel: drag in any direction; each notch reports +1 / -1. */
 @Composable
-fun DataWheel(modifier: Modifier = Modifier, wheelSize: Dp = 78.dp, onNotch: (Int) -> Unit) {
+fun DataWheel(modifier: Modifier = Modifier, wheelSize: Dp = 102.dp, labelOnTop: Boolean = true, onNotch: (Int) -> Unit) {
     val notchCb by rememberUpdatedState(onNotch)
     var acc by remember { mutableFloatStateOf(0f) }
     var angle by remember { mutableFloatStateOf(0f) }
     Column(modifier, horizontalAlignment = Alignment.CenterHorizontally) {
+        if (labelOnTop) PanelLabel("DATA", modifier = Modifier.padding(bottom = 2.dp))
         Canvas(
             Modifier
                 .size(wheelSize)
@@ -336,9 +337,9 @@ fun DataWheel(modifier: Modifier = Modifier, wheelSize: Dp = 78.dp, onNotch: (In
             val a = Math.toRadians(angle.toDouble() + 40.0)
             val dimple = Offset(c.x + r * 0.42f * sin(a).toFloat(), c.y - r * 0.42f * cos(a).toFloat())
             drawCircle(Color(0xFF101214), r * 0.15f, dimple)
-            drawCircle(Theme.Red, r * 0.15f, dimple, style = Stroke(r * 0.05f))
+            drawCircle(Theme.AccentB, r * 0.15f, dimple, style = Stroke(r * 0.05f))
         }
-        PanelLabel("DATA", modifier = Modifier.padding(top = 2.dp))
+        if (!labelOnTop) PanelLabel("DATA", modifier = Modifier.padding(top = 2.dp))
     }
 }
 
@@ -350,7 +351,7 @@ fun HwButton(
     label: String,
     modifier: Modifier = Modifier,
     active: Boolean = false,
-    activeColor: Color = Theme.Red,
+    activeColor: Color = Theme.AccentA,
     height: Dp = 40.dp,
     round: Boolean = false,
     caption: String? = null,
@@ -360,7 +361,7 @@ fun HwButton(
     val shape = RoundedCornerShape(radius)
     Column(modifier, horizontalAlignment = Alignment.CenterHorizontally) {
         if (label.isNotEmpty()) {
-            PanelLabel(label, color = if (active) Theme.RedText else Theme.Dim)
+            PanelLabel(label, color = if (active) activeColor else Theme.Dim)
             Spacer(Modifier.height(2.dp))
         }
         val body = if (active) {
@@ -403,34 +404,41 @@ fun HwButton(
 
 enum class TransportKind { REC, STOP, PLAY }
 
-/** Domed rubber transport button sitting in a steel collar; PLAY is lit from inside. */
+/**
+ * Domed rubber transport button in a steel collar. REC is red, STOP is grey,
+ * and PLAY lights up in the theme's AccentB (mint) while the pattern plays.
+ */
 @Composable
-fun TransportButton(kind: TransportKind, lit: Boolean, modifier: Modifier = Modifier, onClick: () -> Unit) {
-    val label = kind.name
+fun TransportButton(kind: TransportKind, lit: Boolean, modifier: Modifier = Modifier, size: Dp = 48.dp, onClick: () -> Unit) {
+    val playLit = kind == TransportKind.PLAY && lit
+    val glowColor = when {
+        playLit -> Theme.AccentB
+        kind == TransportKind.REC && lit -> Theme.RecRed
+        else -> null
+    }
     Column(modifier, horizontalAlignment = Alignment.CenterHorizontally) {
-        PanelLabel(label, color = if (kind == TransportKind.PLAY && lit) Theme.RedText else Theme.Dim)
+        PanelLabel(kind.name, color = if (playLit) Theme.AccentB else Theme.Dim)
         Spacer(Modifier.height(3.dp))
         Box(
             Modifier
-                .size(48.dp)
+                .size(size + 8.dp)
                 .clickable(remember { MutableInteractionSource() }, indication = null) { onClick() },
             contentAlignment = Alignment.Center,
         ) {
             Canvas(Modifier.fillMaxSize()) {
-                val r = size.minDimension / 2f - 4.dp.toPx()
+                val r = size.toPx() / 2f
                 val c = center
-                val glowOn = (kind == TransportKind.PLAY && lit) || (kind == TransportKind.REC && lit)
-                if (glowOn) {
-                    drawCircle(Theme.Red.copy(alpha = 0.18f), r + 9.dp.toPx(), c)
-                    drawCircle(Theme.Red.copy(alpha = 0.22f), r + 6.dp.toPx(), c)
+                if (glowColor != null) {
+                    drawCircle(glowColor.copy(alpha = 0.16f), r + 9.dp.toPx(), c)
+                    drawCircle(glowColor.copy(alpha = 0.22f), r + 6.dp.toPx(), c)
                 }
                 drawCircle(Color.Black.copy(alpha = 0.6f), r + 4.dp.toPx(), c + Offset(0f, 2.dp.toPx()))
                 drawCircle(Color.White.copy(alpha = 0.08f), r + 4.dp.toPx(), c)
                 drawCircle(Color(0xFF141619), r + 3.dp.toPx(), c)
                 drawCircle(Color.Black, r + 0.6.dp.toPx(), c)
-                val dome = if (kind == TransportKind.PLAY && lit) {
+                val dome = if (playLit) {
                     Brush.radialGradient(
-                        0f to Color(0xFFFF8A7A), 0.42f to Color(0xFFE8352E), 1f to Color(0xFF9A1712),
+                        0f to lighten(Theme.AccentB, 0.6f), 0.42f to Theme.AccentB, 1f to darken(Theme.AccentB, 0.55f),
                         center = Offset(c.x, c.y - r * 0.4f), radius = r * 1.5f,
                     )
                 } else {
@@ -441,21 +449,25 @@ fun TransportButton(kind: TransportKind, lit: Boolean, modifier: Modifier = Modi
                 }
                 drawCircle(dome, r, c)
                 drawArc(
-                    Color.White.copy(alpha = if (kind == TransportKind.PLAY && lit) 0.35f else 0.22f), 200f, 140f, false,
+                    Color.White.copy(alpha = if (playLit) 0.35f else 0.22f), 200f, 140f, false,
                     Offset(c.x - r * 0.82f, c.y - r * 0.82f), Size(r * 1.64f, r * 1.64f),
                     style = Stroke(1.5.dp.toPx(), cap = StrokeCap.Round),
                 )
             }
             val (glyph, color) = when (kind) {
-                TransportKind.REC -> "●" to (if (lit) Color(0xFFFF6B6B) else Theme.Red)
+                TransportKind.REC -> "●" to (if (lit) Color(0xFFFF6B6B) else Theme.RecRed)
                 TransportKind.STOP -> "■" to Color(0xFFD8DCE0)
-                TransportKind.PLAY -> "▶" to (if (lit) Color(0xFFFFF4E6) else Color(0xFFD8DCE0))
+                TransportKind.PLAY -> "▶" to (if (lit) darken(Theme.AccentB, 0.82f) else Color(0xFFD8DCE0))
             }
+            val glyphSize = (size.value * 0.32f).sp
             Text(
-                glyph, color = color, fontSize = 15.sp,
+                glyph, color = color, fontSize = glyphSize,
                 style = TextStyle(
-                    shadow = if (kind == TransportKind.STOP || (kind == TransportKind.PLAY && !lit)) Shadow(Color.Black, Offset(0f, 2f), 0f)
-                    else Shadow(color, blurRadius = 12f),
+                    shadow = when {
+                        kind == TransportKind.REC -> Shadow(color, blurRadius = 12f)
+                        playLit -> Shadow(Color.White.copy(alpha = 0.5f), Offset(0f, 1f), 2f)
+                        else -> Shadow(Color.Black, Offset(0f, 2f), 0f)
+                    },
                 ),
             )
         }
@@ -474,10 +486,12 @@ fun StepKey(
     isBeat: Boolean,
     noteText: String,
     modifier: Modifier = Modifier,
+    noteDim: Boolean = false,   // a switched-off step showing the note it remembers
     onClick: () -> Unit,
 ) {
     Column(modifier, horizontalAlignment = Alignment.CenterHorizontally) {
-        LedLens(if (isPlayhead) Theme.Red else ledColor)
+        // assigned steps glow AccentB; the moving clock light is AccentA
+        LedLens(if (isPlayhead) Theme.AccentA else ledColor)
         Spacer(Modifier.height(1.dp))
         val shape = RoundedCornerShape(4.dp)
         val top = if (isBeat) {
@@ -492,7 +506,7 @@ fun StepKey(
                 .weight(1f)
                 .padding(bottom = 3.dp)
                 .offset(y = press)
-                .let { if (isPlayhead) it.shadow(8.dp, shape, ambientColor = Theme.Red, spotColor = Theme.Red) else it }
+                .let { if (isPlayhead) it.shadow(8.dp, shape, ambientColor = Theme.AccentA, spotColor = Theme.AccentA) else it }
                 .drawBehind {
                     if (!isPlayhead) {
                         // soft drop shadow and the solid key base under the cap
@@ -505,14 +519,14 @@ fun StepKey(
                 .background(top, shape)
                 .border(
                     if (isSelected) 2.dp else 1.dp,
-                    if (isSelected) Theme.Amber else Theme.KeyEdge, shape,
+                    if (isSelected) Theme.AccentB else Theme.KeyEdge, shape,
                 )
                 .drawBehind {
                     val w = size.width; val h = size.height
                     if (isPlayhead) {
                         // pressed in: shadowed top edge and a red glow from below
                         drawRect(Brush.verticalGradient(listOf(Color.Black.copy(alpha = 0.6f), Color.Transparent), endY = 6.dp.toPx()))
-                        drawRect(Brush.radialGradient(listOf(Theme.Red.copy(alpha = 0.35f), Color.Transparent), radius = w))
+                        drawRect(Brush.radialGradient(listOf(Theme.AccentA.copy(alpha = 0.35f), Color.Transparent), radius = w))
                     } else {
                         // lit top edge, shaded sides and bottom
                         drawLine(Color.White.copy(alpha = 0.22f), Offset(3.dp.toPx(), 1.5f), Offset(w - 3.dp.toPx(), 1.5f), 1.2f)
@@ -524,27 +538,68 @@ fun StepKey(
             contentAlignment = Alignment.BottomCenter,
         ) {
             Text(
-                noteText, color = if (isPlayhead) Color(0xFFFFD9D4) else Theme.KeyText,
+                noteText,
+                color = when {
+                    isPlayhead -> lighten(Theme.AccentA, 0.75f)
+                    noteDim -> Theme.KeyText.copy(alpha = 0.32f)
+                    else -> Theme.KeyText
+                },
                 fontSize = 9.5.sp, fontWeight = FontWeight.SemiBold, fontFamily = PanelFonts.Condensed,
                 modifier = Modifier.padding(bottom = 3.dp),
             )
         }
         Text(
-            "$number", color = if (isBeat) Theme.Amber else Theme.Dim, fontSize = 10.sp,
+            "$number", color = if (isBeat) Theme.AccentA else Theme.Dim, fontSize = 10.sp,
             fontWeight = FontWeight.Bold, fontFamily = PanelFonts.Condensed,
         )
     }
 }
 
-// ============================================================ crossfader
+// ============================================================ faders
+
+/** Draws a DJ-style fader cap centred at [c]: black ribbed rubber with an AccentB / white / AccentB line. */
+private fun DrawScope.faderCap(c: Offset, w: Float, h: Float, glow: Color?) {
+    val tl = Offset(c.x - w / 2, c.y - h / 2)
+    val sz = Size(w, h)
+    val rr = CornerRadius(3.dp.toPx())
+    if (glow != null) {
+        for (k in 3 downTo 1) {
+            val g = k * 3.dp.toPx()
+            drawRoundRect(glow.copy(alpha = 0.12f), Offset(tl.x - g, tl.y - g), Size(w + 2 * g, h + 2 * g), CornerRadius(3.dp.toPx() + g))
+        }
+    }
+    drawRoundRect(Color.Black.copy(alpha = 0.75f), tl + Offset(0f, 3.dp.toPx()), sz, rr)
+    drawRoundRect(Brush.verticalGradient(listOf(Color(0xFF3C4045), Color(0xFF222528), Color(0xFF141618)), startY = tl.y, endY = tl.y + h), tl, sz, rr)
+    var x = tl.x + 2.dp.toPx()
+    while (x < tl.x + w - 2.dp.toPx()) {
+        drawLine(Color.White.copy(alpha = 0.09f), Offset(x, tl.y + 1.5f), Offset(x, tl.y + h - 1.5f), 1f)
+        x += 2.dp.toPx()
+    }
+    val lineW = w - 4.dp.toPx()
+    val lineL = tl.x + 2.dp.toPx()
+    drawRect(Theme.AccentB, Offset(lineL, c.y - 2.5.dp.toPx()), Size(lineW, 5.dp.toPx()))
+    drawRect(Color.White, Offset(lineL, c.y - 1.dp.toPx()), Size(lineW, 2.dp.toPx()))
+    drawRoundRect(Color.Black, tl, sz, rr, style = Stroke(1.dp.toPx()))
+    drawLine(Color.White.copy(alpha = 0.22f), tl + Offset(2.dp.toPx(), 1.5f), tl + Offset(w - 2.dp.toPx(), 1.5f), 1f)
+}
+
+/** Tick marks either side of a vertical fader slot. */
+private fun DrawScope.faderTicks(top: Float, bottom: Float, count: Int, tickW: Float) {
+    for (k in 0..count) {
+        val y = top + (bottom - top) * k / count
+        drawLine(Theme.KnobRim, Offset(0f, y), Offset(tickW, y), 1f)
+        drawLine(Theme.KnobRim, Offset(size.width - tickW, y), Offset(size.width, y), 1f)
+    }
+}
 
 /**
- * DJ-mixer style crossfader: a black ribbed cap with a red / white / red centre
- * line, riding in a recessed slot. The slot glows from amber (scene A) to red
- * (scene B), and the lit part and the cap's glow blend to the colour at the cap.
+ * Scene morph: a tall vertical crossfader. Scene A at the bottom, scene B at the
+ * top. The slot fades from AccentA to AccentB (the same two colours, in the same
+ * order, as the line by the logo); the lit part and the cap's glow follow the
+ * colour at the cap's position.
  */
 @Composable
-fun Crossfader(
+fun MorphFader(
     value: Float,
     modifier: Modifier = Modifier,
     onStart: () -> Unit,
@@ -556,76 +611,138 @@ fun Crossfader(
     val changeCb by rememberUpdatedState(onChange)
     val endCb by rememberUpdatedState(onEnd)
     var drag by remember { mutableFloatStateOf(value) }
-    Box(modifier.height(40.dp)) {
-        val capW = 18.dp
-        Canvas(
-            Modifier
-                .fillMaxSize()
-                .pointerInput(Unit) {
-                    val travel = size.width - capW.toPx()
-                    detectHorizontalDragGestures(
-                        onDragStart = { drag = latest; startCb() },
-                        onDragEnd = { endCb() },
-                        onDragCancel = { endCb() },
-                        onHorizontalDrag = { change, dx ->
-                            change.consume()
-                            drag = (drag + dx / travel).coerceIn(0f, 1f)
-                            changeCb(drag)
-                        },
-                    )
+    val capH = 20.dp
+    Canvas(
+        modifier.pointerInput(Unit) {
+            val travel = size.height - capH.toPx()
+            detectVerticalDragGestures(
+                onDragStart = { drag = latest; startCb() },
+                onDragEnd = { endCb() },
+                onDragCancel = { endCb() },
+                onVerticalDrag = { change, dy ->
+                    change.consume()
+                    drag = (drag - dy / travel).coerceIn(0f, 1f)   // up = towards B
+                    changeCb(drag)
                 },
-        ) {
-            val w = size.width
-            val cy = size.height / 2f
-            val cw = capW.toPx()
-            val ch = 32.dp.toPx()
-            val slotH = 6.dp.toPx()
-            val travel = w - cw
-            val capX = cw / 2f + travel * value
-            val mix = Theme.morphColor(value)
-            val slotTop = cy - slotH / 2f
-            // recessed slot with a faint amber-to-red wash
-            drawRoundRect(Color(0xFF050607), Offset(0f, slotTop), Size(w, slotH), CornerRadius(slotH / 2))
-            drawRoundRect(
-                Brush.horizontalGradient(listOf(Theme.Amber.copy(alpha = 0.4f), Theme.Red.copy(alpha = 0.3f))),
-                Offset(0f, slotTop), Size(w, slotH), CornerRadius(slotH / 2),
             )
-            drawLine(Color.Black.copy(alpha = 0.9f), Offset(slotH / 2, slotTop + 1f), Offset(w - slotH / 2, slotTop + 1f), 2f)
-            drawLine(Color.White.copy(alpha = 0.08f), Offset(slotH / 2, slotTop + slotH + 1f), Offset(w - slotH / 2, slotTop + slotH + 1f), 1f)
-            // lit part from A to the cap, blending to the colour at the cap
-            if (capX > slotH) {
-                drawRoundRect(
-                    Brush.horizontalGradient(listOf(Theme.Amber, mix), startX = 0f, endX = capX),
-                    Offset(0f, slotTop), Size(capX, slotH), CornerRadius(slotH / 2),
-                )
-            }
-            // cap glow
-            for (k in 3 downTo 1) {
-                val g = k * 3.dp.toPx()
-                drawRoundRect(
-                    mix.copy(alpha = 0.12f), Offset(capX - cw / 2 - g, cy - ch / 2 - g), Size(cw + 2 * g, ch + 2 * g),
-                    CornerRadius(3.dp.toPx() + g),
-                )
-            }
-            // cap shadow, body, ridges, centre line, rim
-            val capTL = Offset(capX - cw / 2, cy - ch / 2)
-            val capSize = Size(cw, ch)
-            val rr = CornerRadius(3.dp.toPx())
-            drawRoundRect(Color.Black.copy(alpha = 0.75f), capTL + Offset(0f, 3.dp.toPx()), capSize, rr)
-            drawRoundRect(Brush.verticalGradient(listOf(Color(0xFF3C4045), Color(0xFF222528), Color(0xFF141618)), startY = capTL.y, endY = capTL.y + ch), capTL, capSize, rr)
-            var y = capTL.y + 2.dp.toPx()
-            while (y < capTL.y + ch - 2.dp.toPx()) {
-                drawLine(Color.White.copy(alpha = 0.09f), Offset(capTL.x + 1.5f, y), Offset(capTL.x + cw - 1.5f, y), 1f)
-                y += 3.dp.toPx() / 1.5f
-            }
-            val lineH = ch - 4.dp.toPx()
-            val lineTop = capTL.y + 2.dp.toPx()
-            drawRect(Theme.Red, Offset(capX - 2.5.dp.toPx(), lineTop), Size(5.dp.toPx(), lineH))
-            drawRect(Color.White, Offset(capX - 1.dp.toPx(), lineTop), Size(2.dp.toPx(), lineH))
-            drawRoundRect(Color.Black, capTL, capSize, rr, style = Stroke(1.dp.toPx()))
-            drawLine(Color.White.copy(alpha = 0.22f), capTL + Offset(2.dp.toPx(), 1.5f), capTL + Offset(cw - 2.dp.toPx(), 1.5f), 1f)
+        },
+    ) {
+        val ch = capH.toPx()
+        val cw = min(size.width - 4.dp.toPx(), 40.dp.toPx())
+        val slotW = 6.dp.toPx()
+        val cx = size.width / 2f
+        val top = ch / 2f
+        val bottom = size.height - ch / 2f
+        val capY = bottom - (bottom - top) * value
+        val mix = Theme.morphColor(value)
+        faderTicks(top, bottom, 10, 8.dp.toPx())
+        val slotTL = Offset(cx - slotW / 2, top)
+        val slotSize = Size(slotW, bottom - top)
+        val sr = CornerRadius(slotW / 2)
+        drawRoundRect(Color(0xFF050607), slotTL, slotSize, sr)
+        drawRoundRect(
+            Brush.verticalGradient(listOf(Theme.AccentB.copy(alpha = 0.45f), Theme.AccentA.copy(alpha = 0.45f)), startY = top, endY = bottom),
+            slotTL, slotSize, sr,
+        )
+        if (bottom - capY > 1f) {
+            drawRoundRect(
+                Brush.verticalGradient(listOf(mix, Theme.AccentA), startY = capY, endY = bottom),
+                Offset(cx - slotW / 2, capY), Size(slotW, bottom - capY), sr,
+            )
         }
+        faderCap(Offset(cx, capY), cw, ch, mix)
     }
+}
+
+/**
+ * Transpose: a small vertical fader with a centre detent at 0 and whole-semitone
+ * steps from -12 (bottom) to +12 (top). Double-tap to jump back to 0.
+ */
+@Composable
+fun TransposeFader(
+    semitones: Int,
+    modifier: Modifier = Modifier,
+    onChange: (Int) -> Unit,
+) {
+    val latest by rememberUpdatedState(semitones)
+    val changeCb by rememberUpdatedState(onChange)
+    var acc by remember { mutableFloatStateOf(0f) }
+    val capH = 13.dp
+    Canvas(
+        modifier
+            .pointerInput(Unit) {
+                val perStep = (size.height - capH.toPx()) / 24f
+                detectVerticalDragGestures(
+                    onDragStart = { acc = 0f },
+                    onVerticalDrag = { change, dy ->
+                        change.consume()
+                        acc -= dy
+                        val steps = (acc / perStep).toInt()
+                        if (steps != 0) { acc -= steps * perStep; changeCb(latest + steps) }
+                    },
+                )
+            }
+            .pointerInput(Unit) { detectTapGestures(onDoubleTap = { changeCb(0) }) },
+    ) {
+        val ch = capH.toPx()
+        val top = ch / 2f
+        val bottom = size.height - ch / 2f
+        val cx = size.width / 2f
+        val slotW = 6.dp.toPx()
+        faderTicks(top, bottom, 8, 6.dp.toPx())
+        drawLine(Theme.AccentA, Offset(0f, (top + bottom) / 2), Offset(size.width, (top + bottom) / 2), 2.dp.toPx())
+        drawRoundRect(
+            Brush.verticalGradient(listOf(Theme.AccentB.copy(alpha = 0.4f), Theme.AccentA.copy(alpha = 0.4f)), startY = top, endY = bottom),
+            Offset(cx - slotW / 2, top), Size(slotW, bottom - top), CornerRadius(slotW / 2),
+        )
+        val y = (top + bottom) / 2 - (bottom - top) / 2 * (semitones / 12f)
+        faderCap(Offset(cx, y), size.width - 4.dp.toPx(), ch, Theme.AccentB.copy(alpha = 0.6f))
+    }
+}
+
+// ============================================================ display plate
+
+/** A raised black-metal plate with a screw in each corner, framing the display. */
+@Composable
+fun ScrewPlate(modifier: Modifier = Modifier, content: @Composable () -> Unit) {
+    val shape = RoundedCornerShape(6.dp)
+    Box(
+        modifier
+            .shadow(9.dp, shape)
+            .background(Brush.verticalGradient(listOf(Color(0xFF24272B), Color(0xFF121416))), shape)
+            .border(1.dp, Color.Black, shape)
+            .drawBehind {
+                // fine grain, a lit top bevel and a dark bottom bevel
+                var y = 2f
+                while (y < size.height) {
+                    drawLine(Color.White.copy(alpha = 0.03f), Offset(0f, y), Offset(size.width, y), 1f)
+                    y += 3.dp.toPx() / 1.5f
+                }
+                drawLine(Color.White.copy(alpha = 0.16f), Offset(6.dp.toPx(), 1.5f), Offset(size.width - 6.dp.toPx(), 1.5f), 1f)
+                drawLine(Color.Black.copy(alpha = 0.9f), Offset(6.dp.toPx(), size.height - 1.5f), Offset(size.width - 6.dp.toPx(), size.height - 1.5f), 1f)
+                // screws
+                val sr = 4.dp.toPx()
+                val inset = 5.dp.toPx()
+                listOf(
+                    Offset(inset, inset) to 35f, Offset(size.width - inset, inset) to -20f,
+                    Offset(inset, size.height - inset) to 80f, Offset(size.width - inset, size.height - inset) to 10f,
+                ).forEach { (c, angle) ->
+                    drawCircle(Color.Black.copy(alpha = 0.85f), sr, c + Offset(0f, 1f))
+                    drawCircle(
+                        Brush.radialGradient(
+                            listOf(Color(0xFF9AA1A8), Color(0xFF4A4F55), Color(0xFF15171A)),
+                            center = Offset(c.x - sr * 0.3f, c.y - sr * 0.4f), radius = sr * 1.4f,
+                        ),
+                        sr, c,
+                    )
+                    val a = Math.toRadians(angle.toDouble())
+                    val dx = (cos(a) * sr * 0.75).toFloat()
+                    val dy = (sin(a) * sr * 0.75).toFloat()
+                    drawLine(Color(0xFF0C0D0E), Offset(c.x - dx, c.y - dy), Offset(c.x + dx, c.y + dy), 1.5.dp.toPx())
+                }
+            }
+            .padding(9.dp),
+    ) { content() }
 }
 
 // ============================================================ helpers

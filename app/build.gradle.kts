@@ -15,8 +15,8 @@ android {
         applicationId = "com.bergz.zx700"
         minSdk = 29
         targetSdk = 35
-        versionCode = 2
-        versionName = "0.2.0-test"
+        versionCode = 3
+        versionName = "0.3.0-test"
 
         ndk {
             // Pixel 9 is arm64; x86_64 lets it run in an emulator on Intel/AMD PCs.

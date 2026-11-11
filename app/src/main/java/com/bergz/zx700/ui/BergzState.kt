@@ -14,22 +14,21 @@ import kotlin.math.abs
 import kotlin.math.roundToInt
 import kotlin.random.Random
 
+fun transposeText(v: Int): String = when { v > 0 -> "+$v"; v < 0 -> "−${-v}"; else -> "0" }
+
 data class PresetInfo(val index: Int, val name: String, val category: Int)
 
 /**
- * What a patch looked like when you left it: both scenes, the slider, its steps
- * (with the key/scale they were in), algorithm and tempo. Kept in memory only,
- * so every patch is back to its default when the app is closed and reopened.
+ * Your sound tweaks to a patch: both scenes, the slider and the algorithm. Kept
+ * in memory while the app is open, so you can switch patches and come back to
+ * your version of the sound. The patch's steps always reset to its default
+ * pattern on a patch change, and tempo/transpose are yours, not the patch's.
  */
 private class PatchSession(
     val sceneA: FloatArray,
     val sceneB: FloatArray,
     val morph: Float,
-    val notes: List<List<Int>>,
-    val key: Int,
-    val scaleIndex: Int,
     val algorithm: Float,
-    val tempo: Float,
 )
 
 /**
@@ -101,6 +100,11 @@ class BergzState {
     private var sceneA = FloatArray(P.MOTION_COUNT)
     private var sceneB = FloatArray(P.MOTION_COUNT)
     private val sessions = HashMap<Int, PatchSession>()
+    /**
+     * Step memory for this jam: notes a step had when you switched it off, so
+     * switching it back on brings them back. Cleared on patch change and app start.
+     */
+    val ghosts = mutableStateListOf<List<Int>>().apply { repeat(NativeEngine.STEPS) { add(listOf(-1, -1, -1, -1)) } }
     private var patchLoaded = false
     private val touched = BooleanArray(P.COUNT)
     private val localSetAt = LongArray(P.COUNT)
@@ -124,6 +128,7 @@ class BergzState {
         val now = SystemClock.uptimeMillis()
         for (k in 0 until P.COUNT) { params[k] = NativeEngine.nativeDefaultParam(k); localSetAt[k] = now }
         sessions.clear()
+        for (s in 0 until NativeEngine.STEPS) ghosts[s] = emptyStep
         patchLoaded = false
         key = 0
         scaleIndex = 0  // C MAJOR
@@ -137,10 +142,7 @@ class BergzState {
     // ---------------------------------------------------------------- presets
     private fun saveSession() {
         if (!patchLoaded) return
-        sessions[presetIndex] = PatchSession(
-            sceneA.copyOf(), sceneB.copyOf(), morph, notes.toList(), key, scaleIndex,
-            params[P.ALGORITHM], params[P.TEMPO],
-        )
+        sessions[presetIndex] = PatchSession(sceneA.copyOf(), sceneB.copyOf(), morph, params[P.ALGORITHM])
     }
 
     fun loadPreset(index: Int) {
@@ -155,28 +157,28 @@ class BergzState {
 
         val p = NativeEngine.nativePresetParams(i)
         val now = SystemClock.uptimeMillis()
-        for (k in 0 until P.PRESET_COUNT) { params[k] = p[k]; localSetAt[k] = now }
+        // Tempo is the player's: the patch's own tempo is ignored.
+        for (k in 0 until P.PRESET_COUNT) if (k != P.TEMPO) { params[k] = p[k]; localSetAt[k] = now }
 
         val saved = sessions[i]
-        val steps: List<List<Int>>
         if (saved != null) {
-            // Back to a patch you already tweaked this session: restore it.
+            // Back to a patch you already tweaked this session: restore your sound.
             sceneA = saved.sceneA.copyOf()
             sceneB = saved.sceneB.copyOf()
             morph = saved.morph
             applyScenes()
             setRaw(P.ALGORITHM, saved.algorithm)
-            setRaw(P.TEMPO, saved.tempo)
-            steps = conformSteps(saved.notes, saved.key, SCALES[saved.scaleIndex], key, scale)
         } else {
             sceneA = FloatArray(P.MOTION_COUNT) { params[it] }
             sceneB = variation(sceneA)
             morph = 0f
-            val n = NativeEngine.nativePresetNotes(i)
-            val raw = List(NativeEngine.STEPS) { s -> List(NativeEngine.NOTES_PER_STEP) { n[s * NativeEngine.NOTES_PER_STEP + it] } }
-            steps = conformSteps(raw, PRESET_KEY, SCALES[PRESET_SCALE_INDEX], key, scale)
         }
+        // Steps always start from the patch's own pattern, in your key and scale.
+        val n = NativeEngine.nativePresetNotes(i)
+        val raw = List(NativeEngine.STEPS) { s -> List(NativeEngine.NOTES_PER_STEP) { n[s * NativeEngine.NOTES_PER_STEP + it] } }
+        val steps = conformSteps(raw, PRESET_KEY, SCALES[PRESET_SCALE_INDEX], key, scale)
         for (s in 0 until NativeEngine.STEPS) sendStep(s, steps[s])
+        for (s in 0 until NativeEngine.STEPS) ghosts[s] = emptyStep
 
         patchLoaded = true
         selectedStep = -1
@@ -335,6 +337,19 @@ class BergzState {
         message = if (v > 0.5f) "PING-PONG ON" else "PING-PONG OFF"
     }
 
+    // ---------------------------------------------------------------- transpose
+    /** Sequencer transpose in semitones (-12..+12). Starts at 0; kept across patch changes. */
+    val transpose: Int get() = params[P.TRANSPOSE].roundToInt()
+
+    fun setTranspose(semitones: Int) {
+        val v = semitones.coerceIn(-12, 12)
+        if (v.toFloat() == params[P.TRANSPOSE]) return
+        setRaw(P.TRANSPOSE, v.toFloat())
+        message = "TRANSPOSE ${transposeText(v)}"
+    }
+
+    fun nudgeTranspose(by: Int) = setTranspose(transpose + by)
+
     // ---------------------------------------------------------------- key & scale
     fun openKeyPicker() {
         keyPickerOpen = true
@@ -346,10 +361,14 @@ class BergzState {
     /** Change key and/or scale: the current pattern moves with it, note by note. */
     fun setKeyScale(newKey: Int, newScaleIndex: Int) {
         if (newKey == key && newScaleIndex == scaleIndex) return
+        val oldKey = key
+        val oldScale = scale
         val converted = conformSteps(notes.toList(), key, scale, newKey, SCALES[newScaleIndex])
         key = newKey
         scaleIndex = newScaleIndex
         for (s in 0 until NativeEngine.STEPS) if (converted[s] != notes[s]) sendStep(s, converted[s])
+        val ghostsMoved = conformSteps(ghosts.toList(), oldKey, oldScale, newKey, SCALES[newScaleIndex])
+        for (s in 0 until NativeEngine.STEPS) ghosts[s] = ghostsMoved[s]
         message = keyScaleName
     }
 
@@ -364,6 +383,12 @@ class BergzState {
     fun stepPressed(step: Int) {
         val current = notes[step]
         when {
+            current[0] < 0 && ghosts[step][0] >= 0 -> {
+                // switched back on: it carries on with the notes it was left on
+                writeStep(step, ghosts[step])
+                selectedStep = step
+                message = "STEP ${step + 1} ${noteName(ghosts[step][0])} · BACK ON"
+            }
             current[0] < 0 -> {
                 val n = snapToScale(homeNote, key, scale)
                 writeStep(step, listOf(n, -1, -1, -1))
@@ -371,9 +396,10 @@ class BergzState {
                 message = "STEP ${step + 1} ${noteName(n)} · TURN DATA"
             }
             selectedStep == step -> {
+                ghosts[step] = current  // remember it for this jam
                 writeStep(step, emptyStep)
                 selectedStep = -1
-                message = "STEP ${step + 1} CLEARED"
+                message = "STEP ${step + 1} OFF · NOTE REMEMBERED"
             }
             else -> {
                 selectedStep = step

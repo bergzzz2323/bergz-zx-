@@ -23,7 +23,9 @@ object NativeEngine {
         const val PH_DEPTH = 28; const val PH_FEEDBACK = 29
         // FX on/off lights
         const val REV_ON = 30; const val DLY_ON = 31; const val PH_ON = 32
-        const val COUNT = 33
+        // Sequencer transpose in semitones, -12..+12
+        const val TRANSPOSE = 33
+        const val COUNT = 34
         /** Params below this id can be motion-recorded and are part of scenes A/B. */
         const val MOTION_COUNT = TEMPO
         /** Presets store params below this id; FX panel settings and lights are kept across patches. */

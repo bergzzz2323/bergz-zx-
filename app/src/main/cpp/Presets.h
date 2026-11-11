@@ -248,7 +248,10 @@ inline void loadPreset(const Preset& p, Send send) {
     send(Cmd{CMD_CLEAR_PATTERN, 0, 0, 0.f});
     send(Cmd{CMD_CLEAR_MOTION, -1, 0, 0.f});
     // FX settings-panel params are left as the player set them.
-    for (int id = 0; id < kPresetParams; ++id) send(Cmd{CMD_PARAM, id, 0, p.params[id]});
+    // Tempo belongs to the player, not the patch: it starts at 120 and only
+    // changes when the player changes it. (The patch's tempo stays in the data.)
+    for (int id = 0; id < kPresetParams; ++id)
+        if (id != P_TEMPO) send(Cmd{CMD_PARAM, id, 0, p.params[id]});
     for (int s = 0; s < kSteps; ++s)
         for (int n = 0; n < kNotesPerStep; ++n)
             if (p.notes[s][n] >= 0) send(Cmd{CMD_STEP_NOTE, s, p.notes[s][n], (float)n});

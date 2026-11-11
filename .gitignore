@@ -12,6 +12,7 @@ captures/
 tools/render_test
 tools/midi_test
 tools/fx_test
+tools/jam_test
 tools/*.wav
 
 # Imported reference banks (SysEx from other instruments) are for local
