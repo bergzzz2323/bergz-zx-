@@ -1,9 +1,11 @@
-# Bergz ZX 700 — test build v0.3
+# Bergz ZX 700 — test build v0.4
 
 A landscape FM groove synth for Android, tuned for the Pixel 9.
 Native C++ FM engine on Oboe (low-latency audio), Jetpack Compose panel UI.
 Look: black brushed steel with walnut end-cheeks, an amber display in a screwed-down black metal plate, and purple/mint accents.
-It runs edge to edge; both walnut cheeks are sized to the camera cut-out, so the camera sits on wood in either landscape direction.
+It runs edge to edge with slim walnut cheeks. The middle row keeps a thin clear strip on both outer edges, so the
+punch-hole camera never covers a control, whichever way round the phone is held.
+Layout for two hands: REC / STOP / PLAY and the DATA wheel bottom-left, the scene morph on the right.
 Synth-only: the built-in drum machine is switched off so the focus stays on FM sounds.
 
 ## Install on your Pixel 9
@@ -32,7 +34,7 @@ The app opens full-screen in landscape. Use headphones or a speaker for the bass
 | **FX light** | Turns the shown effect on or off. Effects that are on keep playing when you switch to another, so all three can be stacked. The three dots show which are on. Delay is on at start-up; reverb and phaser are off |
 | **REC** | Motion record: while it's lit, every knob you move is recorded into the loop and replays every bar. Overdub more knobs on later passes |
 | **CLEAR** | Erase all recorded motion |
-| **SCENE MORPH** (right-hand column) | Morph between two versions of the sound with the tall fader: A at the bottom (purple), B at the top (mint). With the fader fully down, knob tweaks change A; fully up, they change B; in between, both move together. SHIFT + A/B copies the current sound into that scene. Morphing while REC is lit records the morph |
+| **SCENE MORPH** (middle row, right) | Morph between two versions of the sound with the horizontal fader: A on the left (purple), B on the right (mint). With the fader fully left, knob tweaks change A; fully right, they change B; in between, both move together. SHIFT + A/B copies the current sound into that scene. Morphing while REC is lit records the morph |
 | **TRANSPOSE** | Vertical fader, 0 in the middle, ±12 semitones; +1 / −1 buttons nudge it. Tap the readout or double-tap the fader to go back to 0. It moves the playing sequence, not live MIDI notes |
 | **Step keys** | Tap empty = add note, tap again = select (mint edge), tap selected = switch the step off. A switched-off step remembers its notes (shown dimmed): tap it again to bring them back. Mint lights = steps with notes, purple light = the playhead |
 | **DATA wheel** (bottom left) | With a step selected: move its note through the scale. Otherwise: tempo. Tempo starts at 120 BPM and only changes when you change it; patches never touch it |

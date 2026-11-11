@@ -6,6 +6,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
@@ -46,6 +47,7 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.TileMode
 import androidx.compose.ui.graphics.drawscope.DrawScope
+import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.TextStyle
@@ -355,6 +357,7 @@ fun HwButton(
     height: Dp = 40.dp,
     round: Boolean = false,
     caption: String? = null,
+    captionSize: TextUnit = 11.sp,
     onClick: () -> Unit,
 ) {
     val radius = if (round) height / 2 else 5.dp
@@ -395,7 +398,7 @@ fun HwButton(
             if (caption != null) {
                 Text(
                     caption, color = if (active) Color.White else Theme.Label,
-                    fontSize = 11.sp, fontWeight = FontWeight.Bold, fontFamily = PanelFonts.Condensed, letterSpacing = 1.sp,
+                    fontSize = captionSize, fontWeight = FontWeight.Bold, fontFamily = PanelFonts.Condensed, letterSpacing = 1.sp,
                 )
             }
         }
@@ -544,12 +547,12 @@ fun StepKey(
                     noteDim -> Theme.KeyText.copy(alpha = 0.32f)
                     else -> Theme.KeyText
                 },
-                fontSize = 9.5.sp, fontWeight = FontWeight.SemiBold, fontFamily = PanelFonts.Condensed,
-                modifier = Modifier.padding(bottom = 3.dp),
+                fontSize = 11.sp, fontWeight = FontWeight.SemiBold, fontFamily = PanelFonts.Condensed,
+                modifier = Modifier.padding(bottom = 4.dp),
             )
         }
         Text(
-            "$number", color = if (isBeat) Theme.AccentA else Theme.Dim, fontSize = 10.sp,
+            "$number", color = if (isBeat) Theme.AccentA else Theme.Dim, fontSize = 11.sp,
             fontWeight = FontWeight.Bold, fontFamily = PanelFonts.Condensed,
         )
     }
@@ -593,10 +596,10 @@ private fun DrawScope.faderTicks(top: Float, bottom: Float, count: Int, tickW: F
 }
 
 /**
- * Scene morph: a tall vertical crossfader. Scene A at the bottom, scene B at the
- * top. The slot fades from AccentA to AccentB (the same two colours, in the same
- * order, as the line by the logo); the lit part and the cap's glow follow the
- * colour at the cap's position.
+ * Scene morph: a horizontal DJ-style crossfader. Scene A on the left, scene B on
+ * the right. The slot fades from AccentA to AccentB (the same two colours, in the
+ * same order, as the line by the logo); the lit part and the cap's glow follow the
+ * colour at the cap's position. Drag anywhere on it; the cap follows the finger.
  */
 @Composable
 fun MorphFader(
@@ -611,46 +614,53 @@ fun MorphFader(
     val changeCb by rememberUpdatedState(onChange)
     val endCb by rememberUpdatedState(onEnd)
     var drag by remember { mutableFloatStateOf(value) }
-    val capH = 20.dp
+    val capW = 24.dp
     Canvas(
         modifier.pointerInput(Unit) {
-            val travel = size.height - capH.toPx()
-            detectVerticalDragGestures(
+            val travel = size.width - capW.toPx()
+            detectHorizontalDragGestures(
                 onDragStart = { drag = latest; startCb() },
                 onDragEnd = { endCb() },
                 onDragCancel = { endCb() },
-                onVerticalDrag = { change, dy ->
+                onHorizontalDrag = { change, dx ->
                     change.consume()
-                    drag = (drag - dy / travel).coerceIn(0f, 1f)   // up = towards B
+                    drag = (drag + dx / travel).coerceIn(0f, 1f)   // right = towards B
                     changeCb(drag)
                 },
             )
         },
     ) {
-        val ch = capH.toPx()
-        val cw = min(size.width - 4.dp.toPx(), 40.dp.toPx())
-        val slotW = 6.dp.toPx()
-        val cx = size.width / 2f
-        val top = ch / 2f
-        val bottom = size.height - ch / 2f
-        val capY = bottom - (bottom - top) * value
+        val cw = capW.toPx()
+        val ch = min(size.height - 4.dp.toPx(), 40.dp.toPx())
+        val slotH = 7.dp.toPx()
+        val cy = size.height / 2f
+        val left = cw / 2f
+        val right = size.width - cw / 2f
+        val capX = left + (right - left) * value
         val mix = Theme.morphColor(value)
-        faderTicks(top, bottom, 10, 8.dp.toPx())
-        val slotTL = Offset(cx - slotW / 2, top)
-        val slotSize = Size(slotW, bottom - top)
-        val sr = CornerRadius(slotW / 2)
+        // tick marks above and below the slot
+        val tickH = 8.dp.toPx()
+        for (k in 0..16) {
+            val x = left + (right - left) * k / 16
+            drawLine(Theme.KnobRim, Offset(x, 0f), Offset(x, tickH), 1f)
+            drawLine(Theme.KnobRim, Offset(x, size.height - tickH), Offset(x, size.height), 1f)
+        }
+        val slotTL = Offset(left, cy - slotH / 2)
+        val slotSize = Size(right - left, slotH)
+        val sr = CornerRadius(slotH / 2)
         drawRoundRect(Color(0xFF050607), slotTL, slotSize, sr)
         drawRoundRect(
-            Brush.verticalGradient(listOf(Theme.AccentB.copy(alpha = 0.45f), Theme.AccentA.copy(alpha = 0.45f)), startY = top, endY = bottom),
+            Brush.horizontalGradient(listOf(Theme.AccentA.copy(alpha = 0.45f), Theme.AccentB.copy(alpha = 0.45f)), startX = left, endX = right),
             slotTL, slotSize, sr,
         )
-        if (bottom - capY > 1f) {
+        if (capX - left > 1f) {
             drawRoundRect(
-                Brush.verticalGradient(listOf(mix, Theme.AccentA), startY = capY, endY = bottom),
-                Offset(cx - slotW / 2, capY), Size(slotW, bottom - capY), sr,
+                Brush.horizontalGradient(listOf(Theme.AccentA, mix), startX = left, endX = capX),
+                slotTL, Size(capX - left, slotH), sr,
             )
         }
-        faderCap(Offset(cx, capY), cw, ch, mix)
+        // the cap is drawn as a vertical-fader cap turned on its side, so its line runs top to bottom
+        rotate(90f, Offset(capX, cy)) { faderCap(Offset(capX, cy), ch, cw, mix) }
     }
 }
 
