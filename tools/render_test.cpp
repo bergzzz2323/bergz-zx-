@@ -33,6 +33,7 @@ int main(int argc, char** argv) {
     std::vector<float> all;
     int failures = 0;
 
+    int seen[kCategories] = {};
     for (const Preset& p : presets()) {
         SynthCore synth((float)sr);
         loadPreset(p, [&](const Cmd& c) { synth.command(c); });
@@ -81,7 +82,9 @@ int main(int argc, char** argv) {
         failures += ok ? 0 : 1;
         std::printf("%-13s peak %.2f  rms %.3f  non-finite %d  motion replay diff %.3f  %s\n",
                     p.name, peak, rms, bad, diff, ok ? "ok" : "CHECK");
-        all.insert(all.end(), buf.begin(), buf.end());
+        // Every patch is checked; only the first of each bank goes into the WAV (keeps it small).
+        if (p.category >= 0 && p.category < kCategories && seen[p.category]++ == 0)
+            all.insert(all.end(), buf.begin(), buf.end());
     }
     writeWav(out, all, sr);
     std::printf("wrote %s (%.1f s)\n", out, all.size() / 2.0 / sr);

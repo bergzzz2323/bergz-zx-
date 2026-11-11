@@ -543,21 +543,24 @@ private fun PatchBrowser(state: BergzState) {
                 // sounds in the chosen category
                 val sounds = state.library.filter { it.category == state.browserCategory }
                 val current = sounds.indexOfFirst { it.index == state.presetIndex }
-                val grid = rememberLazyGridState(initialFirstVisibleItemIndex = maxOf(0, current))
-                LazyVerticalGrid(
-                    columns = GridCells.Fixed(3),
-                    state = grid,
-                    modifier = Modifier.weight(1f).fillMaxHeight(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp),
-                    contentPadding = PaddingValues(bottom = 12.dp),
-                ) {
-                    items(sounds, key = { it.index }) { info ->
-                        BrowserTile(
-                            title = info.name,
-                            subtitle = state.categories.getOrElse(info.category) { "" },
-                            selected = state.presetIndex == info.index, color = Theme.AccentA, height = 56,
-                        ) { state.loadPreset(info.index) }
+                // 3 columns x 5 rows: a whole bank of 15 on screen at once, no scrolling.
+                BoxWithConstraints(Modifier.weight(1f).fillMaxHeight()) {
+                    val tileH = ((maxHeight - 32.dp) / 5).coerceAtLeast(40.dp)
+                    val grid = rememberLazyGridState(initialFirstVisibleItemIndex = maxOf(0, current))
+                    LazyVerticalGrid(
+                        columns = GridCells.Fixed(3),
+                        state = grid,
+                        modifier = Modifier.fillMaxSize(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        items(sounds, key = { it.index }) { info ->
+                            BrowserTile(
+                                title = info.name,
+                                subtitle = "%02d".format(sounds.indexOf(info) + 1),
+                                selected = state.presetIndex == info.index, color = Theme.AccentA, height = tileH.value.toInt(),
+                            ) { state.loadPreset(info.index) }
+                        }
                     }
                 }
             }

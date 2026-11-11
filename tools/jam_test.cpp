@@ -14,6 +14,15 @@ int main() {
         if (!ok) ++fails;
     };
 
+    // Every bank holds exactly 15 patches (the browser shows them as a 3 x 5 grid).
+    {
+        int count[kCategories] = {};
+        for (const Preset& p : presets()) if (p.category >= 0 && p.category < kCategories) ++count[p.category];
+        bool all15 = true;
+        for (int c = 0; c < kCategories; ++c) if (count[c] != 15) { all15 = false; std::printf("  %s has %d\n", kCategoryNames[c], count[c]); }
+        check(all15, "every bank has 15 patches");
+    }
+
     SynthCore s(48000.f);
     check(s.param(P_TEMPO) == 120.f, "starts at 120 BPM");
     check(s.param(P_TRANSPOSE) == 0.f, "starts with transpose 0");
