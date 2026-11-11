@@ -2,6 +2,7 @@
 
 A landscape FM groove synth for Android, tuned for the Pixel 9.
 Native C++ FM engine on Oboe (low-latency audio), Jetpack Compose panel UI.
+Look: black brushed steel with walnut end-cheeks, an amber display and amber/red accents.
 Synth-only: the built-in drum machine is switched off so the focus stays on FM sounds.
 
 ## Install on your Pixel 9
@@ -123,3 +124,10 @@ tools/render_test.cpp            Desktop WAV renderer / engine test
 - Per-step parameter locks exist in the engine but have no UI yet.
 - Imported SysEx banks are not supported yet; keep any reference banks in a
   `reference-banks/` folder, which is git-ignored and never shipped.
+
+## Fonts
+
+The panel uses VT323 (display) and Barlow Condensed (labels), both under the SIL
+Open Font Licence. They are downloaded from the Google Fonts repository on the
+first build (`fetchFonts` in `app/build.gradle.kts`), so that build needs an
+internet connection. Their licences are bundled in the app under `assets/licenses`.

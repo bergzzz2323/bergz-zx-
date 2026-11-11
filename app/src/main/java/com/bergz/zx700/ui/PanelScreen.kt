@@ -31,8 +31,6 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.Slider
-import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -42,6 +40,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.text.font.FontStyle
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
@@ -59,6 +60,9 @@ import com.bergz.zx700.audio.NativeEngine.P
 
 private val glow = { c: Color -> Shadow(color = c, blurRadius = 14f) }
 
+/** Left column: display, buttons, transport + the big DATA wheel. */
+private val LEFT_COLUMN = 226.dp
+
 /** The whole instrument on one landscape screen, like a piece of hardware. */
 @Composable
 fun PanelScreen(state: BergzState) {
@@ -68,42 +72,47 @@ fun PanelScreen(state: BergzState) {
     Box(
         Modifier
             .fillMaxSize()
-            .background(Neon.Body)
+            .brushedSteel()
             .windowInsetsPadding(WindowInsets.displayCutout),  // keep controls clear of the camera
     ) {
+    Row(Modifier.fillMaxSize()) {
+    WalnutCheek()
     Column(
         Modifier
-            .fillMaxSize()
-            .padding(horizontal = 14.dp, vertical = 8.dp),
+            .weight(1f)
+            .fillMaxHeight()
+            .padding(horizontal = 12.dp, vertical = 8.dp),
         verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
         Header(state)
         Row(Modifier.fillMaxWidth().weight(1.15f), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Display(state, Modifier.width(214.dp).fillMaxHeight())
+            Display(state, Modifier.width(LEFT_COLUMN).fillMaxHeight())
             Section("SOUND · FM", Modifier.weight(2.9f).fillMaxHeight()) {
-                K(state, P.FM_DEPTH, Neon.Pink); K(state, P.HARMONIC, Neon.Blue); K(state, P.FEEDBACK, Neon.Blue)
+                K(state, P.FM_DEPTH, Theme.Amber); K(state, P.HARMONIC, Theme.Red); K(state, P.FEEDBACK, Theme.Red)
             }
             Section("TONE · FILTER", Modifier.weight(2.9f).fillMaxHeight()) {
-                K(state, P.CUTOFF, Neon.Blue); K(state, P.RESO, Neon.Blue); K(state, P.ENV_AMT, Neon.Blue)
+                K(state, P.CUTOFF, Theme.Red); K(state, P.RESO, Theme.Red); K(state, P.ENV_AMT, Theme.Red)
             }
             FxSection(state, Modifier.weight(2.7f).fillMaxHeight())
-            Section("OUT", Modifier.weight(1.2f).fillMaxHeight()) { K(state, P.VOLUME, Neon.Pink, size = 54) }
+            Section("OUT", Modifier.weight(1.2f).fillMaxHeight()) { K(state, P.VOLUME, Theme.Amber, size = 54) }
         }
         Row(Modifier.fillMaxWidth().weight(1.15f), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            NavCluster(state, Modifier.width(214.dp).fillMaxHeight())
+            NavCluster(state, Modifier.width(LEFT_COLUMN).fillMaxHeight())
             Section("SHAPE · ENVELOPE", Modifier.weight(4f).fillMaxHeight()) {
-                K(state, P.ATTACK, Neon.Blue); K(state, P.DECAY, Neon.Blue)
-                K(state, P.SUSTAIN, Neon.Blue); K(state, P.RELEASE, Neon.Blue)
+                K(state, P.ATTACK, Theme.Red); K(state, P.DECAY, Theme.Red)
+                K(state, P.SUSTAIN, Theme.Red); K(state, P.RELEASE, Theme.Red)
             }
             Section("MOVEMENT", Modifier.weight(3f).fillMaxHeight()) {
-                K(state, P.LFO_RATE, Neon.Purple); K(state, P.LFO_DEPTH, Neon.Purple); K(state, P.GATE, Neon.Pink)
+                K(state, P.LFO_RATE, Theme.Amber); K(state, P.LFO_DEPTH, Theme.Amber); K(state, P.GATE, Theme.Amber)
             }
             MotionSection(state, Modifier.weight(3.6f).fillMaxHeight())
         }
         Row(Modifier.fillMaxWidth().weight(0.95f), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Transport(state, Modifier.width(214.dp).fillMaxHeight())
+            Transport(state, Modifier.width(LEFT_COLUMN).fillMaxHeight())
             Steps(state, Modifier.weight(1f).fillMaxHeight())
         }
+    }
+    WalnutCheek()
     }
     if (state.fxSettingsOpen) FxSettings(state)
     if (state.browserOpen) PatchBrowser(state)
@@ -127,26 +136,26 @@ private fun FxSettings(state: BergzState) {
                 .padding(top = 36.dp)
                 .fillMaxWidth(0.66f)
                 .fillMaxHeight(0.6f)
-                .shadow(16.dp, shape, ambientColor = Neon.Pink, spotColor = Neon.Pink)
-                .background(Neon.Panel, shape)
-                .border(1.dp, Neon.Pink, shape)
+                .shadow(16.dp, shape)
+                .background(Theme.Popup, shape)
+                .border(1.dp, Theme.Line, shape)
                 // swallow taps so only the dimmed area outside closes the panel
                 .clickable(remember { MutableInteractionSource() }, indication = null) { }
                 .padding(horizontal = 16.dp, vertical = 10.dp),
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
-                    "${state.fx.name} · SETTINGS", color = Neon.Pink, fontSize = 13.sp,
-                    fontWeight = FontWeight.ExtraBold, letterSpacing = 2.sp,
-                    style = TextStyle(shadow = glow(Neon.Pink)), modifier = Modifier.weight(1f),
+                    "${state.fx.name} · SETTINGS", color = Theme.Amber, fontSize = 13.sp,
+                    fontWeight = FontWeight.Bold, fontFamily = PanelFonts.Condensed, letterSpacing = 2.sp,
+                    style = TextStyle(shadow = glow(Theme.Amber)), modifier = Modifier.weight(1f),
                 )
                 FxLight(state.fxOn(state.fxSelected), big = true) { state.toggleFx() }
                 Spacer(Modifier.width(10.dp))
-                HwButton("", Modifier.width(76.dp), active = true, activeColor = Neon.Blue, height = 30.dp, caption = "DONE") {
+                HwButton("", Modifier.width(76.dp), active = true, activeColor = Theme.Red, height = 30.dp, caption = "DONE") {
                     state.closeFxSettings()
                 }
             }
-            Box(Modifier.fillMaxWidth().padding(vertical = 6.dp).height(1.dp).background(Neon.Line))
+            Box(Modifier.fillMaxWidth().padding(vertical = 6.dp).height(1.dp).background(Theme.Line))
             Row(
                 Modifier.fillMaxWidth().weight(1f),
                 horizontalArrangement = Arrangement.SpaceEvenly,
@@ -155,42 +164,42 @@ private fun FxSettings(state: BergzState) {
                 val off = !state.fxOn(state.fxSelected)
                 when (state.fxSelected) {
                     1 -> {  // reverb
-                        K(state, P.REV_MIX, Neon.Purple, "AMOUNT", size = 56, dim = off)
-                        K(state, P.REV_SIZE, Neon.Purple, "SIZE", size = 56, dim = off)
-                        K(state, P.REV_TONE, Neon.Blue, size = 56, dim = off)
-                        K(state, P.REV_WIDTH, Neon.Blue, size = 56, dim = off)
+                        K(state, P.REV_MIX, Theme.Amber, "AMOUNT", size = 56, dim = off)
+                        K(state, P.REV_SIZE, Theme.Amber, "SIZE", size = 56, dim = off)
+                        K(state, P.REV_TONE, Theme.Red, size = 56, dim = off)
+                        K(state, P.REV_WIDTH, Theme.Red, size = 56, dim = off)
                     }
                     0 -> {  // delay
-                        K(state, P.DLY_MIX, Neon.Purple, "AMOUNT", size = 52, dim = off)
-                        K(state, P.DLY_FB, Neon.Purple, "FEEDBACK", size = 52, dim = off)
-                        K(state, P.DLY_TONE, Neon.Blue, size = 52, dim = off)
+                        K(state, P.DLY_MIX, Theme.Amber, "AMOUNT", size = 52, dim = off)
+                        K(state, P.DLY_FB, Theme.Amber, "FEEDBACK", size = 52, dim = off)
+                        K(state, P.DLY_TONE, Theme.Red, size = 52, dim = off)
                         Column(Modifier.width(150.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                             PanelLabel("TIME")
                             Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                                 NativeEngine.DELAY_TIMES.forEachIndexed { i, label ->
                                     HwButton(
                                         "", Modifier.weight(1f), active = state.delayTimeIndex == i,
-                                        activeColor = Neon.Blue, height = 32.dp, caption = label,
+                                        activeColor = Theme.Red, height = 32.dp, caption = label,
                                     ) { state.setDelayTime(i) }
                                 }
                             }
                             HwButton(
                                 "", Modifier.fillMaxWidth(), active = state.params[P.DLY_PING] > 0.5f,
-                                activeColor = Neon.Pink, height = 32.dp, caption = "PING-PONG",
+                                activeColor = Theme.Amber, height = 32.dp, caption = "PING-PONG",
                             ) { state.togglePingPong() }
                         }
                     }
                     else -> {  // phaser
-                        K(state, P.PH_MIX, Neon.Purple, "AMOUNT", size = 56, dim = off)
-                        K(state, P.PH_RATE, Neon.Purple, "RATE", size = 56, dim = off)
-                        K(state, P.PH_DEPTH, Neon.Blue, size = 56, dim = off)
-                        K(state, P.PH_FEEDBACK, Neon.Blue, size = 56, dim = off)
+                        K(state, P.PH_MIX, Theme.Amber, "AMOUNT", size = 56, dim = off)
+                        K(state, P.PH_RATE, Theme.Amber, "RATE", size = 56, dim = off)
+                        K(state, P.PH_DEPTH, Theme.Red, size = 56, dim = off)
+                        K(state, P.PH_FEEDBACK, Theme.Red, size = 56, dim = off)
                     }
                 }
             }
             Text(
                 "Tap the FX name to switch effect · the light turns it on/off · effects that are on all play together",
-                color = Neon.Muted, fontSize = 9.sp,
+                color = Theme.Muted, fontSize = 11.sp, fontFamily = PanelFonts.Condensed,
             )
         }
     }
@@ -213,77 +222,91 @@ private fun K(state: BergzState, id: Int, ring: Color, labelOverride: String? = 
 private fun Header(state: BergzState) {
     Row(Modifier.fillMaxWidth().height(24.dp), verticalAlignment = Alignment.CenterVertically) {
         Text(
-            "BERGZ", color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.Black, letterSpacing = 4.sp,
-            style = TextStyle(shadow = glow(Neon.Pink)),
+            "BERGZ", color = Theme.Text, fontSize = 21.sp, fontWeight = FontWeight.Bold, fontFamily = PanelFonts.Condensed,
+            fontStyle = FontStyle.Italic, fontFamily = PanelFonts.Condensed, letterSpacing = 4.sp,
         )
         Spacer(Modifier.width(10.dp))
         Text(
-            "ZX·700", color = Neon.Blue, fontSize = 13.sp, fontWeight = FontWeight.Bold, letterSpacing = 2.sp,
-            style = TextStyle(shadow = glow(Neon.Blue)),
+            "ZX·700", color = Theme.ModelRed, fontSize = 15.sp, fontWeight = FontWeight.Bold, fontFamily = PanelFonts.Condensed,
+            fontStyle = FontStyle.Italic, fontFamily = PanelFonts.Condensed, letterSpacing = 2.sp,
         )
         Spacer(Modifier.width(10.dp))
         Text(
-            "FM MOTION SYNTHESIZER", color = Neon.Purple, fontSize = 8.sp, fontWeight = FontWeight.Bold, letterSpacing = 2.sp,
-            style = TextStyle(shadow = glow(Neon.Purple)),
+            "FM MOTION SYNTHESIZER", color = Theme.Dim, fontSize = 10.sp, fontWeight = FontWeight.Bold,
+            fontFamily = PanelFonts.Condensed, letterSpacing = 2.sp,
         )
         Spacer(Modifier.width(12.dp))
+        // amber-to-red line that fades in and out
         Box(
-            Modifier.weight(1f).height(2.dp)
-                .shadow(6.dp, RoundedCornerShape(1.dp), ambientColor = Neon.Pink, spotColor = Neon.Pink)
-                .background(Neon.Pink),
+            Modifier.weight(1f).height(2.dp).background(
+                Brush.horizontalGradient(
+                    0f to Color.Transparent, 0.18f to Theme.Amber, 0.72f to Theme.Red, 1f to Color.Transparent,
+                ),
+            ),
         )
         Spacer(Modifier.width(12.dp))
         // MIDI: activity light + connected sources, then where the sound is going.
-        Box(
-            Modifier.size(7.dp)
-                .let { if (state.midiActive) it.shadow(6.dp, CircleShape, ambientColor = Neon.Blue, spotColor = Neon.Blue) else it }
-                .background(if (state.midiActive) Neon.Blue else Neon.LedOff, CircleShape),
-        )
-        Spacer(Modifier.width(5.dp))
+        LedLens(if (state.midiActive) Theme.Red else null, unlit = Color(0xFF4A1A1A), diameter = 6.dp)
+        Spacer(Modifier.width(4.dp))
         val sources = state.midiSources
         Text(
             if (sources.isEmpty()) "MIDI READY" else "MIDI · " + sources.joinToString(", "),
-            color = if (sources.isEmpty()) Neon.Muted else Neon.Blue, fontSize = 8.sp, fontWeight = FontWeight.Bold,
+            color = Theme.Dim, fontSize = 10.sp, fontWeight = FontWeight.Bold, fontFamily = PanelFonts.Condensed,
             letterSpacing = 1.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.widthIn(max = 220.dp),
         )
         Spacer(Modifier.width(10.dp))
-        Text("OUT · ${state.outputName}", color = Neon.Dim, fontSize = 8.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
+        Text(
+            "OUT · ${state.outputName}", color = Theme.Dim, fontSize = 10.sp, fontWeight = FontWeight.Bold,
+            fontFamily = PanelFonts.Condensed, letterSpacing = 1.sp,
+        )
         if (!state.audioOk) {
             Spacer(Modifier.width(8.dp))
-            Text("AUDIO OFF", color = Neon.Rec, fontSize = 9.sp, fontWeight = FontWeight.Bold)
+            Text("AUDIO OFF", color = Theme.RedText, fontSize = 10.sp, fontWeight = FontWeight.Bold, fontFamily = PanelFonts.Condensed)
         }
     }
 }
 
+/** The amber display, set behind a dark bezel. */
 @Composable
 private fun Display(state: BergzState, modifier: Modifier) {
-    val shape = RoundedCornerShape(10.dp)
-    val mono = TextStyle(
-        fontFamily = FontFamily.Monospace, color = Neon.Blue,
-        shadow = Shadow(Neon.Blue, blurRadius = 10f),
+    val shape = RoundedCornerShape(4.dp)
+    val amber = TextStyle(
+        fontFamily = PanelFonts.Display, color = Theme.Amber,
+        shadow = Shadow(Theme.Amber.copy(alpha = 0.85f), blurRadius = 12f),
     )
-    Column(
+    Box(
         modifier
-            .shadow(10.dp, shape, ambientColor = Neon.Blue, spotColor = Neon.Blue)
-            .background(Neon.Screen, shape)
-            .border(1.dp, Neon.Blue, shape)
-            .padding(horizontal = 10.dp, vertical = 6.dp),
-        verticalArrangement = Arrangement.SpaceBetween,
+            .background(Theme.Bezel, shape)
+            .border(1.dp, Color.White.copy(alpha = 0.06f), shape)
+            .padding(6.dp),
     ) {
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-            Text("${state.presetLabel}${if (state.edited) "*" else ""}", style = mono, fontSize = 11.sp, maxLines = 1)
-            val step = if (state.playhead >= 0) "%02d".format(state.playhead + 1) else "--"
-            Text("ALG ${(state.params[P.ALGORITHM] + 1).toInt()} · $step/16", style = mono, fontSize = 11.sp, maxLines = 1)
-        }
-        Text(state.presetName, style = mono, fontSize = 22.sp, fontWeight = FontWeight.Bold, maxLines = 1)
-        Text(state.message, style = mono, fontSize = 10.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-            Text(
-                state.keyScaleName, style = mono.copy(color = Neon.Pink, shadow = Shadow(Neon.Pink, blurRadius = 10f)),
-                fontSize = 11.sp, maxLines = 1,
-                modifier = Modifier.clickable { state.openKeyPicker() },
-            )
-            Text(if (state.externalSync) "EXT ${state.tempo} BPM" else "${state.tempo} BPM", style = mono, fontSize = 11.sp)
+        Column(
+            Modifier
+                .fillMaxSize()
+                .background(Theme.Screen, RoundedCornerShape(2.dp))
+                .drawBehind {
+                    // glass: dark inner edge
+                    drawRect(Brush.verticalGradient(listOf(Color.Black.copy(alpha = 0.7f), Color.Transparent), endY = 10.dp.toPx()))
+                }
+                .padding(horizontal = 8.dp, vertical = 3.dp),
+            verticalArrangement = Arrangement.SpaceBetween,
+        ) {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                Text("${state.presetLabel}${if (state.edited) "*" else ""}", style = amber, fontSize = 16.sp, maxLines = 1)
+                val step = if (state.playhead >= 0) "%02d".format(state.playhead + 1) else "--"
+                Text("ALG ${(state.params[P.ALGORITHM] + 1).toInt()} · $step/16", style = amber, fontSize = 16.sp, maxLines = 1)
+            }
+            Text(state.presetName, style = amber, fontSize = 30.sp, maxLines = 1, overflow = TextOverflow.Clip)
+            Text(state.message, style = amber, fontSize = 16.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                Text(
+                    state.keyScaleName,
+                    style = amber.copy(color = Theme.DisplayAccent, shadow = Shadow(Theme.DisplayAccent.copy(alpha = 0.85f), blurRadius = 12f)),
+                    fontSize = 16.sp, maxLines = 1,
+                    modifier = Modifier.clickable { state.openKeyPicker() },
+                )
+                Text(if (state.externalSync) "EXT ${state.tempo} BPM" else "${state.tempo} BPM", style = amber, fontSize = 16.sp)
+            }
         }
     }
 }
@@ -297,8 +320,8 @@ private fun NavCluster(state: BergzState, modifier: Modifier) {
                 HwButton(if (state.shift) "KEY" else "ALGO", Modifier.weight(1f), caption = "▸") { state.algoOrKey() }
             }
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                HwButton("MUTATE", Modifier.weight(1f), activeColor = Neon.Blue, caption = "✦") { state.mutate() }
-                HwButton("SHIFT", Modifier.weight(1f), active = state.shift, activeColor = Neon.Blue) { state.toggleShift() }
+                HwButton("MUTATE", Modifier.weight(1f), activeColor = Theme.Red, caption = "✦") { state.mutate() }
+                HwButton("SHIFT", Modifier.weight(1f), active = state.shift, activeColor = Theme.Red) { state.toggleShift() }
             }
         }
     }
@@ -309,33 +332,23 @@ private fun MotionSection(state: BergzState, modifier: Modifier) {
     Section("MOTION · SCENE MORPH", modifier) {
         Column(Modifier.fillMaxSize().padding(top = 2.dp), verticalArrangement = Arrangement.SpaceEvenly) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                val recColor = if (state.recording) Neon.Rec else Neon.LedOff
-                Box(
-                    Modifier.size(8.dp)
-                        .let { if (state.recording) it.shadow(6.dp, CircleShape, ambientColor = Neon.Rec, spotColor = Neon.Rec) else it }
-                        .background(recColor, CircleShape),
-                )
-                Spacer(Modifier.width(6.dp))
+                LedLens(if (state.recording) Theme.Rec else null, unlit = Color(0xFF4A1A22), diameter = 8.dp)
+                Spacer(Modifier.width(4.dp))
                 Text(
-                    state.motionNames(), color = if (state.motionMask != 0) Neon.Blue else Neon.Muted,
-                    fontSize = 9.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f),
+                    state.motionNames(), color = if (state.motionMask != 0) Theme.RedText else Theme.Dim,
+                    fontSize = 11.sp, fontWeight = FontWeight.SemiBold, fontFamily = PanelFonts.Condensed,
+                    maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f),
                 )
-                HwButton("", Modifier.width(56.dp), height = 24.dp, caption = "CLEAR") { state.clearMotion() }
+                HwButton("", Modifier.width(58.dp), height = 24.dp, caption = "CLEAR") { state.clearMotion() }
             }
             Row(verticalAlignment = Alignment.CenterVertically) {
                 SceneButton("A", state.morph < 0.01f) { state.scenePressed(false) }
-                var dragging by remember { mutableStateOf(false) }
-                Slider(
+                Crossfader(
                     value = state.morph,
-                    onValueChange = {
-                        if (!dragging) { dragging = true; state.morphTouch(true) }
-                        state.morphTo(it)
-                    },
-                    onValueChangeFinished = { dragging = false; state.morphTouch(false) },
-                    colors = SliderDefaults.colors(
-                        thumbColor = Neon.Blue, activeTrackColor = Neon.Pink, inactiveTrackColor = Neon.Purple,
-                    ),
-                    modifier = Modifier.weight(1f).padding(horizontal = 6.dp),
+                    modifier = Modifier.weight(1f).padding(horizontal = 8.dp),
+                    onStart = { state.morphTouch(true) },
+                    onChange = { state.morphTo(it) },
+                    onEnd = { state.morphTouch(false) },
                 )
                 SceneButton("B", state.morph > 0.99f) { state.scenePressed(true) }
             }
@@ -345,40 +358,41 @@ private fun MotionSection(state: BergzState, modifier: Modifier) {
 
 @Composable
 private fun SceneButton(name: String, lit: Boolean, onClick: () -> Unit) {
-    HwButton("", Modifier.width(40.dp), active = lit, activeColor = Neon.Blue, height = 36.dp, round = true, caption = name, onClick = onClick)
+    HwButton("", Modifier.width(38.dp), active = lit, height = 38.dp, round = true, caption = name, onClick = onClick)
 }
 
+/** REC / STOP / PLAY on the left, the big DATA wheel next to the step keys. */
 @Composable
 private fun Transport(state: BergzState, modifier: Modifier) {
-    // DATA wheel sits low on the left, away from the camera cut-out.
-    Row(modifier, horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.Bottom) {
-        DataWheel(Modifier.width(70.dp), wheelSize = 60.dp) { state.dataWheel(it) }
-        HwButton("REC", Modifier.weight(1f), active = state.recording, activeColor = Neon.Rec, height = 46.dp, round = true, caption = "●") { state.toggleRecord() }
-        HwButton("STOP", Modifier.weight(1f), height = 46.dp, round = true, caption = "■") { state.stop() }
-        HwButton("PLAY", Modifier.weight(1f), active = state.playing, activeColor = Neon.Blue, height = 46.dp, round = true, caption = "▶") { state.play() }
+    Row(modifier, horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.Bottom) {
+        TransportButton(TransportKind.REC, state.recording) { state.toggleRecord() }
+        TransportButton(TransportKind.STOP, false) { state.stop() }
+        TransportButton(TransportKind.PLAY, state.playing) { state.play() }
+        DataWheel(Modifier.width(84.dp), wheelSize = 78.dp) { state.dataWheel(it) }
     }
 }
 
 @Composable
 private fun Steps(state: BergzState, modifier: Modifier) {
-    val shape = RoundedCornerShape(10.dp)
+    val shape = RoundedCornerShape(4.dp)
     Row(
         modifier
-            .shadow(8.dp, shape, ambientColor = Neon.Purple, spotColor = Neon.Purple)
-            .background(Color(0xFF0A0710), shape)
-            .border(1.dp, Neon.Purple, shape)
-            .padding(horizontal = 8.dp, vertical = 6.dp),
+            .background(Color.Black.copy(alpha = 0.25f), shape)
+            .border(1.dp, Theme.Line, shape)
+            .drawBehind {
+                drawRect(Brush.verticalGradient(listOf(Color.Black.copy(alpha = 0.5f), Color.Transparent), endY = 5.dp.toPx()))
+            }
+            .padding(horizontal = 8.dp, vertical = 4.dp),
         horizontalArrangement = Arrangement.spacedBy(5.dp),
     ) {
         for (i in 0 until NativeEngine.STEPS) {
             val on = state.notes[i][0] >= 0
-            val ledColor = if (on) Neon.Pink else null
             val chord = state.notes[i].count { it >= 0 }
             val chordMark = if (chord > 1) "+" else ""
             val text = if (on) noteName(state.notes[i][0]) + chordMark else ""
             StepKey(
                 number = i + 1,
-                ledColor = ledColor,
+                ledColor = if (on) Theme.Amber else null,
                 isPlayhead = state.playhead == i,
                 isSelected = state.selectedStep == i,
                 isBeat = i % 4 == 0,
@@ -402,28 +416,28 @@ private fun PatchBrowser(state: BergzState) {
             Modifier
                 .fillMaxWidth(0.94f)
                 .fillMaxHeight(0.94f)
-                .shadow(16.dp, shape, ambientColor = Neon.Blue, spotColor = Neon.Blue)
-                .background(Neon.Panel, shape)
-                .border(1.dp, Neon.Blue, shape)
+                .shadow(16.dp, shape)
+                .background(Theme.Popup, shape)
+                .border(1.dp, Theme.Line, shape)
                 .clickable(remember { MutableInteractionSource() }, indication = null) { }
                 .padding(horizontal = 14.dp, vertical = 10.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
-                    "PATCHES", color = Neon.Blue, fontSize = 13.sp, fontWeight = FontWeight.ExtraBold,
-                    letterSpacing = 2.sp, style = TextStyle(shadow = glow(Neon.Blue)),
+                    "PATCHES", color = Theme.Red, fontSize = 13.sp, fontWeight = FontWeight.Bold, fontFamily = PanelFonts.Condensed,
+                    letterSpacing = 2.sp, style = TextStyle(shadow = glow(Theme.Red)),
                 )
                 Spacer(Modifier.width(12.dp))
                 Text(
-                    "NOW: ${state.presetName}", color = Neon.Pink, fontSize = 12.sp, fontWeight = FontWeight.Bold,
-                    fontFamily = FontFamily.Monospace, maxLines = 1, modifier = Modifier.weight(1f),
+                    "NOW: ${state.presetName}", color = Theme.Amber, fontSize = 12.sp, fontWeight = FontWeight.Bold,
+                    fontFamily = PanelFonts.Condensed, maxLines = 1, modifier = Modifier.weight(1f),
                 )
-                HwButton("", Modifier.width(84.dp), active = true, activeColor = Neon.Blue, height = 32.dp, caption = "DONE") {
+                HwButton("", Modifier.width(84.dp), active = true, activeColor = Theme.Red, height = 32.dp, caption = "DONE") {
                     state.closeBrowser()
                 }
             }
-            Box(Modifier.fillMaxWidth().height(1.dp).background(Neon.Line))
+            Box(Modifier.fillMaxWidth().height(1.dp).background(Theme.Line))
             Row(Modifier.fillMaxWidth().weight(1f), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 // categories
                 val catList = rememberLazyListState(initialFirstVisibleItemIndex = maxOf(0, state.browserCategory - 2))
@@ -437,11 +451,11 @@ private fun PatchBrowser(state: BergzState) {
                         val count = state.library.count { it.category == idx }
                         BrowserTile(
                             title = name, subtitle = "$count sounds",
-                            selected = state.browserCategory == idx, color = Neon.Purple, height = 44,
+                            selected = state.browserCategory == idx, color = Theme.Amber, height = 44,
                         ) { state.browserCategory = idx }
                     }
                 }
-                Box(Modifier.width(1.dp).fillMaxHeight().background(Neon.Line))
+                Box(Modifier.width(1.dp).fillMaxHeight().background(Theme.Line))
                 // sounds in the chosen category
                 val sounds = state.library.filter { it.category == state.browserCategory }
                 val current = sounds.indexOfFirst { it.index == state.presetIndex }
@@ -458,7 +472,7 @@ private fun PatchBrowser(state: BergzState) {
                         BrowserTile(
                             title = info.name,
                             subtitle = state.categories.getOrElse(info.category) { "" },
-                            selected = state.presetIndex == info.index, color = Neon.Pink, height = 56,
+                            selected = state.presetIndex == info.index, color = Theme.Amber, height = 56,
                         ) { state.loadPreset(info.index) }
                     }
                 }
@@ -476,36 +490,36 @@ private fun KeyPicker(state: BergzState) {
             Modifier
                 .fillMaxWidth(0.9f)
                 .fillMaxHeight(0.9f)
-                .shadow(16.dp, shape, ambientColor = Neon.Pink, spotColor = Neon.Pink)
-                .background(Neon.Panel, shape)
-                .border(1.dp, Neon.Pink, shape)
+                .shadow(16.dp, shape)
+                .background(Theme.Popup, shape)
+                .border(1.dp, Theme.Line, shape)
                 .clickable(remember { MutableInteractionSource() }, indication = null) { }
                 .padding(horizontal = 14.dp, vertical = 10.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
-                    "KEY & SCALE", color = Neon.Pink, fontSize = 13.sp, fontWeight = FontWeight.ExtraBold,
-                    letterSpacing = 2.sp, style = TextStyle(shadow = glow(Neon.Pink)),
+                    "KEY & SCALE", color = Theme.Amber, fontSize = 13.sp, fontWeight = FontWeight.Bold, fontFamily = PanelFonts.Condensed,
+                    letterSpacing = 2.sp, style = TextStyle(shadow = glow(Theme.Amber)),
                 )
                 Spacer(Modifier.width(12.dp))
                 Text(
-                    state.keyScaleName, color = Neon.Blue, fontSize = 12.sp, fontWeight = FontWeight.Bold,
-                    fontFamily = FontFamily.Monospace, maxLines = 1, modifier = Modifier.weight(1f),
+                    state.keyScaleName, color = Theme.Red, fontSize = 12.sp, fontWeight = FontWeight.Bold,
+                    fontFamily = PanelFonts.Condensed, maxLines = 1, modifier = Modifier.weight(1f),
                 )
-                HwButton("", Modifier.width(84.dp), active = true, activeColor = Neon.Blue, height = 32.dp, caption = "DONE") {
+                HwButton("", Modifier.width(84.dp), active = true, activeColor = Theme.Red, height = 32.dp, caption = "DONE") {
                     state.closeKeyPicker()
                 }
             }
             Row(horizontalArrangement = Arrangement.spacedBy(5.dp)) {
                 KEY_NAMES.forEachIndexed { i, name ->
                     BrowserTile(
-                        title = name, subtitle = null, selected = state.key == i, color = Neon.Blue,
+                        title = name, subtitle = null, selected = state.key == i, color = Theme.Red,
                         height = 44, modifier = Modifier.weight(1f),
                     ) { state.setKeyScale(i, state.scaleIndex) }
                 }
             }
-            Box(Modifier.fillMaxWidth().height(1.dp).background(Neon.Line))
+            Box(Modifier.fillMaxWidth().height(1.dp).background(Theme.Line))
             LazyVerticalGrid(
                 columns = GridCells.Fixed(4),
                 modifier = Modifier.fillMaxWidth().weight(1f),
@@ -516,7 +530,7 @@ private fun KeyPicker(state: BergzState) {
                 items(SCALES.indices.toList()) { i ->
                     BrowserTile(
                         title = SCALES[i].name, subtitle = null, selected = state.scaleIndex == i,
-                        color = Neon.Pink, height = 46,
+                        color = Theme.Amber, height = 46,
                     ) { state.setKeyScale(state.key, i) }
                 }
             }
@@ -547,25 +561,25 @@ private fun BrowserTile(
     modifier: Modifier = Modifier,
     onClick: () -> Unit,
 ) {
-    val shape = RoundedCornerShape(8.dp)
+    val shape = RoundedCornerShape(5.dp)
     Column(
         modifier
             .fillMaxWidth()
             .height(height.dp)
             .let { if (selected) it.shadow(10.dp, shape, ambientColor = color, spotColor = color) else it }
-            .background(if (selected) color.copy(alpha = 0.22f) else Neon.Body, shape)
-            .border(if (selected) 2.dp else 1.dp, if (selected) color else Neon.Line, shape)
+            .background(if (selected) color.copy(alpha = 0.22f) else Theme.Body, shape)
+            .border(if (selected) 2.dp else 1.dp, if (selected) color else Theme.Line, shape)
             .clickable(remember { MutableInteractionSource() }, indication = null) { onClick() }
             .padding(horizontal = 6.dp),
         verticalArrangement = Arrangement.Center,
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Text(
-            title, color = if (selected) Color.White else Neon.Text, fontSize = 12.sp,
-            fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis, textAlign = TextAlign.Center,
+            title, color = if (selected) Color.White else Theme.Text, fontSize = 14.sp,
+            fontWeight = FontWeight.Bold, fontFamily = PanelFonts.Condensed, letterSpacing = 0.8.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, textAlign = TextAlign.Center,
         )
         if (subtitle != null) {
-            Text(subtitle, color = Neon.Muted, fontSize = 8.sp, letterSpacing = 1.sp, maxLines = 1)
+            Text(subtitle, color = Theme.Muted, fontSize = 10.sp, fontFamily = PanelFonts.Condensed, letterSpacing = 1.sp, maxLines = 1)
         }
     }
 }
@@ -577,72 +591,57 @@ private fun BrowserTile(
  */
 @Composable
 private fun FxSection(state: BergzState, modifier: Modifier) {
-    val shape = RoundedCornerShape(10.dp)
     val on = state.fxOn(state.fxSelected)
-    Column(
-        modifier
-            .shadow(8.dp, shape, ambientColor = Neon.Purple, spotColor = Neon.Purple)
-            .background(Neon.Panel, shape)
-            .border(1.dp, Neon.Purple, shape)
-            .padding(horizontal = 6.dp, vertical = 4.dp),
-    ) {
+    SectionPlate(modifier) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(
-                "${state.fx.name} ▸", color = Neon.Pink, fontSize = 9.sp, fontWeight = FontWeight.ExtraBold,
-                letterSpacing = 1.5.sp, maxLines = 1,
-                modifier = Modifier
+            SectionTitle(
+                "${state.fx.name} ▸",
+                Modifier
                     .weight(1f)
                     .pointerInput(Unit) {
                         detectTapGestures(onTap = { state.cycleFx() }, onDoubleTap = { state.openFxSettings() })
                     },
             )
             NativeEngine.FX.indices.forEach { i ->
-                val lit = state.fxOn(i)
                 Box(
                     Modifier
                         .padding(horizontal = 1.5.dp)
                         .size(if (i == state.fxSelected) 6.dp else 4.dp)
-                        .background(if (lit) Neon.Blue else Neon.LedOff, CircleShape),
+                        .background(if (state.fxOn(i)) Theme.Amber else Theme.AmberOff, CircleShape),
                 )
             }
             Spacer(Modifier.width(4.dp))
             FxLight(on) { state.toggleFx() }
         }
-        Box(Modifier.fillMaxWidth().padding(top = 2.dp).height(1.dp).background(Neon.Line))
+        Box(Modifier.fillMaxWidth().padding(top = 2.dp).height(1.dp).background(Theme.Line))
         Row(
             Modifier.fillMaxSize(),
             horizontalArrangement = Arrangement.SpaceEvenly,
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            K(state, state.fx.mix, Neon.Purple, "AMOUNT", dim = !on)
-            K(state, state.fx.param, Neon.Purple, state.fx.paramName, dim = !on)
+            K(state, state.fx.mix, Theme.Amber, "AMOUNT", dim = !on)
+            K(state, state.fx.param, Theme.Amber, state.fx.paramName, dim = !on)
         }
     }
 }
 
-/** Small on/off light: glows blue when the effect is on. */
+/** Small on/off light: a red LED in a dark pill. */
 @Composable
 private fun FxLight(on: Boolean, big: Boolean = false, onClick: () -> Unit) {
     val shape = RoundedCornerShape(50)
     Row(
         Modifier
             .height(if (big) 32.dp else 22.dp)
-            .background(if (on) Neon.Blue.copy(alpha = 0.18f) else Neon.Body, shape)
-            .border(1.dp, if (on) Neon.Blue else Neon.Line, shape)
+            .background(Color(0xFF1B1E21), shape)
+            .border(1.dp, Color.Black, shape)
             .clickable(remember { MutableInteractionSource() }, indication = null) { onClick() }
-            .padding(horizontal = if (big) 10.dp else 6.dp),
+            .padding(horizontal = if (big) 8.dp else 4.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Box(
-            Modifier
-                .size(if (big) 10.dp else 8.dp)
-                .let { if (on) it.shadow(6.dp, CircleShape, ambientColor = Neon.Blue, spotColor = Neon.Blue) else it }
-                .background(if (on) Neon.Blue else Neon.LedOff, CircleShape),
-        )
-        Spacer(Modifier.width(4.dp))
+        LedLens(if (on) Theme.Red else null, unlit = Color(0xFF4A1A1A), diameter = if (big) 9.dp else 7.dp)
         Text(
-            if (on) "ON" else "OFF", color = if (on) Neon.Blue else Neon.Muted,
-            fontSize = if (big) 11.sp else 8.sp, fontWeight = FontWeight.Bold,
+            if (on) "ON" else "OFF", color = if (on) Theme.RedText else Theme.Dim,
+            fontSize = if (big) 12.sp else 10.sp, fontWeight = FontWeight.Bold, fontFamily = PanelFonts.Condensed,
         )
     }
 }

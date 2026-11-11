@@ -18,3 +18,7 @@ tools/*.wav
 # testing only and must never be committed or shipped.
 reference-banks/
 *.syx
+
+# Panel fonts and their licences are downloaded at build time (see app/build.gradle.kts)
+app/src/main/res/font/*.ttf
+app/src/main/assets/licenses/
