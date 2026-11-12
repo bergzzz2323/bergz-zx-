@@ -22,7 +22,11 @@ class BergzMidiReceiver : MidiReceiver() {
     private val data = IntArray(2)
     private var have = 0
 
+    /** Arrival time of the bytes being handled (System.nanoTime base), for clock timing. */
+    private var stamp = 0L
+
     override fun onSend(msg: ByteArray, offset: Int, count: Int, timestamp: Long) {
+        stamp = if (timestamp > 0) timestamp else System.nanoTime()
         for (i in offset until offset + count) handle(msg[i].toInt() and 0xFF)
     }
 
@@ -43,7 +47,7 @@ class BergzMidiReceiver : MidiReceiver() {
 
     private fun realtime(b: Int) {
         when (b) {
-            0xF8 -> NativeEngine.nativeMidiClock()
+            0xF8 -> NativeEngine.nativeMidiClock(stamp)
             0xFA -> NativeEngine.nativeMidiStart()
             0xFB -> NativeEngine.nativeMidiContinue()
             0xFC -> NativeEngine.nativeMidiStop()

@@ -23,3 +23,4 @@ reference-banks/
 # Panel fonts and their licences are downloaded at build time (see app/build.gradle.kts)
 app/src/main/res/font/*.ttf
 app/src/main/assets/licenses/
+tools/seq_test

@@ -1,4 +1,4 @@
-# Bergz ZX 700 — test build v0.6
+# Bergz ZX 700 — test build v0.7
 
 A landscape FM groove synth for Android, tuned for the Pixel 9.
 Native C++ FM engine on Oboe (low-latency audio), Jetpack Compose panel UI.
@@ -38,13 +38,38 @@ The app opens full-screen in landscape. Use headphones or a speaker for the bass
 | **SCENE MORPH** (middle row, right) | Morph between two versions of the sound with the horizontal fader: A on the left (purple), B on the right (mint). With the fader fully left, knob tweaks change A; fully right, they change B; in between, both move together. SHIFT + A/B copies the current sound into that scene. Morphing while REC is lit records the morph |
 | **TRANSPOSE** | Vertical fader, 0 in the middle, ±12 semitones; +1 / −1 buttons nudge it. Tap the readout or double-tap the fader to go back to 0. It moves the playing sequence, not live MIDI notes |
 | **Step keys** | Tap empty = add note, tap again = select (mint edge), tap selected = switch the step off. A switched-off step remembers its notes (shown dimmed): tap it again to bring them back. Mint lights = steps with notes, purple light = the playhead |
-| **DATA wheel** (bottom left) | With a step selected: move its note through the scale. Otherwise: tempo. Tempo starts at 120 BPM and only changes when you change it; patches never touch it |
+| **DATA wheel** (bottom left) | With a step selected, changes what EDIT is set to (NOTE, CHORD, CHANCE, RATCH, TIE). It only changes tempo after you tap the BPM on the display (the BPM lights up; it lets go when you tap a step, tap BPM again or after 4 s). With nothing selected it does nothing, so tempo can't move by accident. Tempo starts at 120 BPM; patches never change it |
 
 225 original patches: 15 in each of 15 banks, shown as a 3 x 5 grid in the patch browser.
 Lead, Pad, **Keys** (FM pianos, tine and suitcase EPs, organs, clav, harpsichord), Bass, Strings, Stabs,
 Plonk, Bleep, FX, Trippy, Cosmic, **Techno** (rollers, acid, dub chords, hypnotic sequences, industrial),
 plus **80s**, **90s** and **20s**. Every patch comes with its own pattern so it plays the moment you load it,
 and the whole library is level-matched so nothing jumps out or disappears when you browse.
+
+## Sequencer (v0.7)
+
+The strip above the steps:
+
+| Control | What it does |
+|---|---|
+| **STEPS / KEYS** | STEPS: edit the pattern. KEYS: the 16 keys become two octaves of your scale, played live over the pattern (OCT − / + to move). With REC lit while playing, what you play is written into the step under the playhead |
+| **PAGE 1-4** | Patterns can be 16, 32, 48 or 64 steps (set in PATT). The lit page is on screen; a purple mark shows the page that is playing |
+| **EDIT** | What DATA changes on the selected step: **NOTE**, **CHORD** (single, 5th, triad, 7th, sus, 9th, always in your scale), **CHANCE** (100 / 75 / 50 / 25 %, the step's light dims to match), **RATCH** (1-4 hits inside the step) and **TIE** (hold the note over the next steps) |
+| **PATT ▦** | 16 pattern slots, kept when you close the app. Tap to load (on the next loop if playing), SHIFT + tap to save, hold to clear. Also LENGTH, RATE (1/32 to 1 bar per step, for long pads) and SWING (50-75 %) |
+| **UNDO** | Back one move (pattern and sound together). SHIFT + UNDO = redo. Hold UNDO for HISTORY: the last 20 moves, tap one to go back to it. History is kept only while the app is open |
+
+The sequencer can have 16 notes sounding at once, plus 8 more for KEYS / MIDI playing, so long pads and chords overlap without cutting each other off.
+
+## Sync (v0.7)
+
+Tap the **SYNC** pill in the header.
+
+- **Clock source:** AUTO (follow MIDI clock whenever it arrives), INT or EXT.
+- **Clock out:** sends clock, start and stop to every connected MIDI device while Bergz is the master. Each tick is sent with the time its audio comes out of the phone.
+- **Sync offset:** −60 to +60 ms, to line Bergz up with your DAW by ear. The phone's own audio delay is allowed for automatically.
+- **Start:** pressing PLAY while following clock starts on the next bar, next beat, or the next clock tick.
+
+Incoming clock is followed smoothly: every clock byte keeps the time it arrived, the tempo is averaged and the sequencer is nudged into phase every 16th, so steps land evenly (under half a millisecond of wobble in the tests) instead of jumping with audio buffers.
 
 ## Keys and scales
 

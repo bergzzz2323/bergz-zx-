@@ -5,6 +5,8 @@
 #include <android/log.h>
 #include <oboe/Oboe.h>
 
+#include <atomic>
+#include <ctime>
 #include <memory>
 #include <mutex>
 
@@ -38,10 +40,39 @@ public:
 
     SynthCore& synth() { return synth_; }
 
+    static int64_t nowNs() {
+        timespec ts{};
+        clock_gettime(CLOCK_MONOTONIC, &ts);  // same clock as System.nanoTime() and MIDI timestamps
+        return (int64_t)ts.tv_sec * 1000000000LL + ts.tv_nsec;
+    }
+
     oboe::DataCallbackResult onAudioReady(oboe::AudioStream*, void* audioData,
                                           int32_t numFrames) override {
+        const int64_t blockNs = nowNs();
+        const int latency = latencyFrames_.load(std::memory_order_relaxed);
+        const uint64_t blockStart = synth_.sampleTime();
+        synth_.setBlockTime(blockNs, latency);
         synth_.render(static_cast<float*>(audioData), numFrames);
+        // Clock-out events: stamp each with the moment its audio reaches the speaker.
+        Cmd c;
+        const double nsPerFrame = 1e9 / (double)lastSampleRate_;
+        while (synth_.popClockOut(c)) {
+            c.t = blockNs + (int64_t)(((double)(c.t - (int64_t)blockStart) + latency) * nsPerFrame);
+            clockOut_.push(c);
+        }
         return oboe::DataCallbackResult::Continue;
+    }
+
+    bool popClockOut(Cmd& c) { return clockOut_.pop(c); }
+
+    // Output latency, measured off the audio thread (called every few ms by the clock-out poller).
+    int updateLatency() {
+        std::lock_guard<std::mutex> lock(mutex_);
+        if (stream_) {
+            auto r = stream_->calculateLatencyMillis();
+            if (r) latencyFrames_.store((int)(r.value() * lastSampleRate_ / 1000.0), std::memory_order_relaxed);
+        }
+        return latencyFrames_.load(std::memory_order_relaxed);
     }
 
     // Headphones unplugged, Bluetooth switched, etc.: reopen on the new device.
@@ -93,6 +124,8 @@ private:
     std::shared_ptr<oboe::AudioStream> stream_;
     SynthCore synth_;
     int lastSampleRate_ = 48000;
+    std::atomic<int> latencyFrames_{0};
+    SpscQueue<1024> clockOut_;
 };
 
 static std::unique_ptr<AudioEngine> gEngine;
@@ -202,7 +235,29 @@ JNIEXPORT void JNICALL JNI_FN(nativeNoteOn)(JNIEnv*, jobject, jint note, jfloat 
 JNIEXPORT void JNICALL JNI_FN(nativeNoteOff)(JNIEnv*, jobject, jint note) { post(CMD_NOTE_OFF, note, 0, 0.f); }
 JNIEXPORT void JNICALL JNI_FN(nativeAllNotesOff)(JNIEnv*, jobject) { post(CMD_ALL_NOTES_OFF, 0, 0, 0.f); }
 JNIEXPORT void JNICALL JNI_FN(nativePitchBend)(JNIEnv*, jobject, jfloat v) { post(CMD_PITCH_BEND, 0, 0, v); }
-JNIEXPORT void JNICALL JNI_FN(nativeMidiClock)(JNIEnv*, jobject) { post(CMD_MIDI_CLOCK, 0, 0, 0.f); }
+JNIEXPORT void JNICALL JNI_FN(nativeMidiClock)(JNIEnv*, jobject, jlong timestampNs) {
+    if (gEngine) gEngine->synth().post({CMD_MIDI_CLOCK, 0, 0, 0.f, (int64_t)timestampNs});
+}
+
+JNIEXPORT void JNICALL JNI_FN(nativeSetStepProps)(JNIEnv*, jobject, jint step, jint chance, jint ratchet, jint tie) {
+    post(CMD_STEP_PROPS, step, (chance & 0xFF) | ((ratchet & 0xFF) << 8) | ((tie & 0xFF) << 16), 0.f);
+}
+
+JNIEXPORT jint JNICALL JNI_FN(nativeSyncState)(JNIEnv*, jobject) { return gEngine ? gEngine->synth().syncState() : 0; }
+JNIEXPORT jint JNICALL JNI_FN(nativeBeat)(JNIEnv*, jobject) { return gEngine ? gEngine->synth().beat() : -1; }
+
+// Clock-out events as (status byte, CLOCK_MONOTONIC ns) pairs; returns how many pairs.
+JNIEXPORT jint JNICALL JNI_FN(nativePollClockOut)(JNIEnv* env, jobject, jlongArray out) {
+    if (!gEngine) return 0;
+    gEngine->updateLatency();
+    const jsize cap = env->GetArrayLength(out) / 2;
+    jlong buf[512];
+    int n = 0;
+    Cmd c;
+    while (n < cap && n < 256 && gEngine->popClockOut(c)) { buf[2 * n] = c.type; buf[2 * n + 1] = c.t; ++n; }
+    if (n > 0) env->SetLongArrayRegion(out, 0, 2 * n, buf);
+    return n;
+}
 JNIEXPORT void JNICALL JNI_FN(nativeMidiStart)(JNIEnv*, jobject) { post(CMD_MIDI_START, 0, 0, 0.f); }
 JNIEXPORT void JNICALL JNI_FN(nativeMidiContinue)(JNIEnv*, jobject) { post(CMD_MIDI_CONTINUE, 0, 0, 0.f); }
 JNIEXPORT void JNICALL JNI_FN(nativeMidiStop)(JNIEnv*, jobject) { post(CMD_MIDI_STOP, 0, 0, 0.f); }

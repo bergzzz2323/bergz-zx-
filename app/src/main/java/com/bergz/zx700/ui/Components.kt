@@ -38,6 +38,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
@@ -479,7 +480,12 @@ fun TransportButton(kind: TransportKind, lit: Boolean, modifier: Modifier = Modi
 
 // ============================================================ step key
 
-/** One step: glass LED lens, sculpted rubber key, step number. */
+/**
+ * One step: glass LED lens, sculpted rubber key, step number. In KEYS mode the
+ * same key is a playable note ([onDown] / [onUp] fire on finger down / up).
+ * Extras: [topText] (chance %), [ratchet] dots, tie bars in / out, [disabled]
+ * for steps past the pattern's end, [ledAlpha] dims the LED (chance).
+ */
 @Composable
 fun StepKey(
     number: Int,
@@ -490,11 +496,25 @@ fun StepKey(
     noteText: String,
     modifier: Modifier = Modifier,
     noteDim: Boolean = false,   // a switched-off step showing the note it remembers
-    onClick: () -> Unit,
+    noteColor: Color? = null,
+    ledAlpha: Float = 1f,
+    topText: String = "",
+    ratchet: Int = 1,
+    tieIn: Boolean = false,
+    tieOut: Boolean = false,
+    pressed: Boolean = false,
+    disabled: Boolean = false,
+    numberText: String = "$number",
+    onUp: () -> Unit = {},
+    onDown: () -> Unit,
 ) {
-    Column(modifier, horizontalAlignment = Alignment.CenterHorizontally) {
+    val downCb by rememberUpdatedState(onDown)
+    val upCb by rememberUpdatedState(onUp)
+    Column(modifier.let { if (disabled) it.alpha(0.35f) else it }, horizontalAlignment = Alignment.CenterHorizontally) {
         // assigned steps glow AccentB; the moving clock light is AccentA
-        LedLens(if (isPlayhead) Theme.AccentA else ledColor)
+        LedLens(
+            if (isPlayhead || pressed) Theme.AccentA else ledColor?.copy(alpha = ledAlpha.coerceIn(0.25f, 1f)),
+        )
         Spacer(Modifier.height(1.dp))
         val shape = RoundedCornerShape(4.dp)
         val top = if (isBeat) {
@@ -502,16 +522,17 @@ fun StepKey(
         } else {
             Brush.verticalGradient(0f to Color(0xFF474B50), 0.46f to Color(0xFF313438), 1f to Color(0xFF222528))
         }
-        val press = if (isPlayhead) 2.dp else 0.dp
+        val down = isPlayhead || pressed
+        val press = if (down) 2.dp else 0.dp
         Box(
             Modifier
                 .fillMaxWidth()
                 .weight(1f)
                 .padding(bottom = 3.dp)
                 .offset(y = press)
-                .let { if (isPlayhead) it.shadow(8.dp, shape, ambientColor = Theme.AccentA, spotColor = Theme.AccentA) else it }
+                .let { if (down) it.shadow(8.dp, shape, ambientColor = Theme.AccentA, spotColor = Theme.AccentA) else it }
                 .drawBehind {
-                    if (!isPlayhead) {
+                    if (!down) {
                         // soft drop shadow and the solid key base under the cap
                         drawRoundRect(Color.Black.copy(alpha = 0.55f), Offset(0f, 4.dp.toPx()), size, CornerRadius(4.dp.toPx()))
                         drawRoundRect(Theme.KeyEdge, Offset(0f, 3.dp.toPx()), size, CornerRadius(4.dp.toPx()))
@@ -526,8 +547,8 @@ fun StepKey(
                 )
                 .drawBehind {
                     val w = size.width; val h = size.height
-                    if (isPlayhead) {
-                        // pressed in: shadowed top edge and a red glow from below
+                    if (down) {
+                        // pressed in: shadowed top edge and a glow from below
                         drawRect(Brush.verticalGradient(listOf(Color.Black.copy(alpha = 0.6f), Color.Transparent), endY = 6.dp.toPx()))
                         drawRect(Brush.radialGradient(listOf(Theme.AccentA.copy(alpha = 0.35f), Color.Transparent), radius = w))
                     } else {
@@ -536,14 +557,44 @@ fun StepKey(
                         drawRect(Brush.horizontalGradient(0f to Color.White.copy(alpha = 0.05f), 0.15f to Color.Transparent, 0.85f to Color.Transparent, 1f to Color.Black.copy(alpha = 0.3f)))
                         drawRect(Brush.verticalGradient(0.75f to Color.Transparent, 1f to Color.Black.copy(alpha = 0.45f), startY = 0f, endY = h))
                     }
+                    // ratchet: a dot per hit along the top
+                    if (ratchet > 1) {
+                        val r = 2.dp.toPx(); val gap = 7.dp.toPx()
+                        val x0 = w / 2 - gap * (ratchet - 1) / 2
+                        for (k in 0 until ratchet) {
+                            drawCircle(Theme.AccentB.copy(alpha = 0.35f), r * 2f, Offset(x0 + gap * k, 7.dp.toPx()))
+                            drawCircle(Theme.AccentB, r, Offset(x0 + gap * k, 7.dp.toPx()))
+                        }
+                    }
+                    // tie: a mint bar near the bottom, running into the neighbouring keys
+                    if (tieIn || tieOut) {
+                        val y = h - 20.dp.toPx()
+                        val l = if (tieIn) -6.dp.toPx() else 4.dp.toPx()
+                        val rr = if (tieOut) w + 6.dp.toPx() else w - 4.dp.toPx()
+                        drawRoundRect(Theme.AccentB.copy(alpha = 0.3f), Offset(l, y - 2.dp.toPx()), Size(rr - l, 7.dp.toPx()), CornerRadius(3.dp.toPx()))
+                        drawRoundRect(Theme.AccentB, Offset(l, y), Size(rr - l, 3.dp.toPx()), CornerRadius(2.dp.toPx()))
+                    }
                 }
-                .clickable(remember { MutableInteractionSource() }, indication = null) { onClick() },
+                .pointerInput(disabled) {
+                    detectTapGestures(onPress = {
+                        downCb()
+                        tryAwaitRelease()
+                        upCb()
+                    })
+                },
             contentAlignment = Alignment.BottomCenter,
         ) {
+            if (topText.isNotEmpty()) {
+                Text(
+                    topText, color = Theme.AccentA, fontSize = 10.sp, fontWeight = FontWeight.ExtraBold,
+                    fontFamily = PanelFonts.Condensed, modifier = Modifier.align(Alignment.TopCenter).padding(top = 3.dp),
+                )
+            }
             Text(
                 noteText,
                 color = when {
-                    isPlayhead -> lighten(Theme.AccentA, 0.75f)
+                    down -> lighten(Theme.AccentA, 0.75f)
+                    noteColor != null -> noteColor
                     noteDim -> Theme.KeyText.copy(alpha = 0.32f)
                     else -> Theme.KeyText
                 },
@@ -552,8 +603,57 @@ fun StepKey(
             )
         }
         Text(
-            "$number", color = if (isBeat) Theme.AccentA else Theme.Dim, fontSize = 11.sp,
+            numberText, color = if (isBeat) Theme.AccentA else Theme.Dim, fontSize = 11.sp,
             fontWeight = FontWeight.Bold, fontFamily = PanelFonts.Condensed,
+        )
+    }
+}
+
+/**
+ * Small panel chip for the sequencer strip and pop-ups. Lit chips glow in
+ * [accent]. [onLongPress] is optional (UNDO opens HISTORY with it).
+ */
+@Composable
+fun Chip(
+    label: String,
+    modifier: Modifier = Modifier,
+    on: Boolean = false,
+    accent: Color = Theme.AccentA,
+    dim: Boolean = false,
+    height: Dp = 22.dp,
+    fontSize: TextUnit = 11.sp,
+    onLongPress: (() -> Unit)? = null,
+    onClick: () -> Unit,
+) {
+    val shape = RoundedCornerShape(4.dp)
+    val clickCb by rememberUpdatedState(onClick)
+    val longCb by rememberUpdatedState(onLongPress)
+    val body = if (on) Brush.verticalGradient(listOf(lighten(accent, 0.35f), darken(accent, 0.2f)))
+    else Brush.verticalGradient(listOf(Color(0xFF3A3E43), Color(0xFF2A2D31)))
+    Box(
+        modifier
+            .height(height)
+            .let { if (on) it.shadow(8.dp, shape, ambientColor = accent, spotColor = accent) else it }
+            .background(body, shape)
+            .border(1.dp, if (on) darken(accent, 0.6f) else Theme.Edge, shape)
+            .pointerInput(Unit) {
+                detectTapGestures(
+                    onTap = { clickCb() },
+                    onLongPress = { longCb?.invoke() ?: clickCb() },
+                )
+            }
+            .padding(horizontal = 7.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            label, fontSize = fontSize, fontWeight = FontWeight.ExtraBold, fontFamily = PanelFonts.Condensed, letterSpacing = 0.5.sp,
+            maxLines = 1,
+            color = when {
+                on && accent == Theme.AccentB -> darken(Theme.AccentB, 0.82f)
+                on -> Color.White
+                dim -> Theme.Dim.copy(alpha = 0.5f)
+                else -> Theme.Label
+            },
         )
     }
 }

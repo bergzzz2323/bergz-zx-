@@ -15,10 +15,11 @@ import androidx.core.view.WindowInsetsControllerCompat
 import com.bergz.zx700.audio.NativeEngine
 import com.bergz.zx700.midi.MidiConnections
 import com.bergz.zx700.ui.BergzState
+import com.bergz.zx700.ui.PrefsStore
 import com.bergz.zx700.ui.PanelScreen
 
 class MainActivity : ComponentActivity() {
-    private val state = BergzState()
+    private val state by lazy { BergzState(PrefsStore(this)) }
     private lateinit var midi: MidiConnections
     private val audioManager by lazy { getSystemService(AUDIO_SERVICE) as AudioManager }
     private var audioCallbackReady = false
@@ -46,6 +47,7 @@ class MainActivity : ComponentActivity() {
         midi = MidiConnections(this)
         midi.start()
         state.midiSources = midi.names
+        state.clockTargets = midi.clockTargets
 
         audioManager.registerAudioDeviceCallback(audioDevices, Handler(Looper.getMainLooper()))
         updateOutputName()

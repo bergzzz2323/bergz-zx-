@@ -16,11 +16,16 @@ namespace bergz {
 
 constexpr float kTwoPi = 6.283185307179586f;
 constexpr float kPi = 3.14159265358979f;
-constexpr int kSteps = 16;
+constexpr int kSteps = 16;          // steps per page (and per preset pattern)
+constexpr int kMaxSteps = 64;       // longest pattern: 4 pages
 constexpr int kOps = 6;
 constexpr int kDrumLanes = 4;
-constexpr int kVoices = 8;        // polyphony, so pads and chords can overlap
-constexpr int kNotesPerStep = 4;  // up to a 4-note chord on any step
+constexpr int kSeqVoices = 16;      // notes the sequencer can have sounding at once
+constexpr int kLiveVoices = 8;      // plus notes played live (KEYS / MIDI), kept separate
+constexpr int kVoices = kSeqVoices + kLiveVoices;
+constexpr int kNotesPerStep = 4;    // up to a 4-note chord on any step
+constexpr int kRates = 6;           // step length: 1/32, 1/16, 1/8, 1/4, 1/2, 1 bar
+constexpr double kRateSixteenths[kRates] = {0.5, 1.0, 2.0, 4.0, 8.0, 16.0};
 
 // ---- Parameter ids (keep in sync with NativeEngine.kt) ---------------------
 enum Param : int {
@@ -42,6 +47,14 @@ enum Param : int {
     P_PH_DEPTH, P_PH_FEEDBACK,
     P_REV_ON, P_DLY_ON, P_PH_ON,       // on/off lights; stack any combination
     P_TRANSPOSE,  // semitones -12..+12 added to the sequencer's notes (not live MIDI)
+    // Pattern and sync settings (v0.7). Real values, not 0..1.
+    P_PAT_LEN,    // steps in the pattern, 1..64
+    P_RATE,       // step length index into kRateSixteenths (1 = 1/16)
+    P_SWING,      // 0.50 straight .. 0.75 heavy shuffle
+    P_SYNC_MODE,  // 0 AUTO (follow clock when present), 1 INT, 2 EXT
+    P_SYNC_OFFSET,// ms, -60..+60: positive plays later
+    P_START_Q,    // starting on external clock: 0 next bar, 1 next beat, 2 next clock tick
+    P_CLOCK_OUT,  // 1 = send MIDI clock / start / stop while Bergz is the master
     P_COUNT
 };
 constexpr int kPresetParams = P_REV_TONE;  // presets store everything before this
@@ -64,11 +77,13 @@ constexpr float kDefaultParams[P_COUNT] = {
     0.73f, 0.67f,                // phaser depth, intensity
     0.f, 1.f, 0.f,               // reverb off, delay ON, phaser off
     0.f,                         // transpose
+    16.f, 1.f, 0.5f,             // pattern length, rate (1/16), swing (straight)
+    0.f, 0.f, 0.f, 0.f,          // sync AUTO, offset 0 ms, start on next bar, clock out off
 };
 
 // Motion recording: knob moves are stored per parameter at 8 points per step.
 constexpr int kTicksPerStep = 8;
-constexpr int kMotionTicks = kSteps * kTicksPerStep;  // 128 per pattern
+constexpr int kMotionTicks = kMaxSteps * kTicksPerStep;  // up to 512 (the loop follows the pattern length)
 constexpr int kMotionParams = P_TEMPO;  // every macro before tempo can be recorded
 
 enum CmdType : int {
@@ -88,10 +103,16 @@ enum CmdType : int {
     CMD_ALL_NOTES_OFF,
     CMD_PITCH_BEND,    // v = -1..1 (+/- 2 semitones)
     CMD_MIDI_CLOCK,    // 24 per quarter note
-    CMD_MIDI_START, CMD_MIDI_CONTINUE, CMD_MIDI_STOP
+    CMD_MIDI_START, CMD_MIDI_CONTINUE, CMD_MIDI_STOP,
+    CMD_STEP_PROPS,    // a = step, b = chance% | ratchet << 8 | tie << 16
 };
 
-struct Cmd { int type; int a; int b; float v; };
+// Clock-out event types (MIDI status bytes), read with popClockOut().
+constexpr int kClockTick = 0xF8, kClockStart = 0xFA, kClockStop = 0xFC;
+
+// t: for MIDI clock in, the arrival time (CLOCK_MONOTONIC ns, 0 = unknown);
+// for clock-out events, the engine sample the event belongs to.
+struct Cmd { int type; int a; int b; float v; int64_t t = 0; };
 
 // ---- Command queue: lock-free for the audio thread (single consumer). -------
 // Several threads may post (UI, MIDI), so pushes are serialised by a mutex the
@@ -225,12 +246,14 @@ struct FmVoice {
     int note = -1;
     int gateLeft = 0;      // samples until note-off (0 = held until noteOff)
     uint32_t order = 0;    // for voice stealing (oldest goes first)
-    bool live = false;     // played from MIDI rather than the sequencer
+    bool live = false;     // held from KEYS / MIDI (cleared on note-off)
+    bool livePool = false; // belongs to the live pool (stays true while it rings out)
     float velocity = 1.f;
 
     void noteOn(int midi, int gateSamples, uint32_t ord, float vel = 1.f, bool isLive = false) {
         note = midi;
         live = isLive;
+        livePool = isLive;
         velocity = vel;
         freq = 440.f * std::pow(2.f, (midi - 69) / 12.f);
         gateLeft = gateSamples;
@@ -242,6 +265,7 @@ struct FmVoice {
         for (auto& e : env) if (e.stage != Env::Idle) return true;
         return false;
     }
+    bool releasing() const { return env[0].stage == Env::Release; }
 
     float tick(const Algorithm& alg, int harmSet, float fmDepth, float feedback, float pitchMul, float sr) {
         if (gateLeft > 0 && --gateLeft == 0) noteOff();
@@ -430,6 +454,26 @@ public:
     uint32_t motionMask() const { return motionMask_.load(std::memory_order_relaxed); }
     bool isPlaying() const { return playingFlag_.load(std::memory_order_relaxed); }
     bool externalSync() const { return extSyncFlag_.load(std::memory_order_relaxed); }
+    // Sync state for the UI: bit 0 following external clock, bit 1 clock arriving,
+    // bit 2 waiting to start on the next bar / beat.
+    int syncState() const { return syncState_.load(std::memory_order_relaxed); }
+    // The quarter-note the clock is on (for the beat lights), or -1.
+    int beat() const { return beat_.load(std::memory_order_relaxed); }
+
+    // ---- audio thread, before render(): wall time of this block (CLOCK_MONOTONIC ns)
+    // and the output latency, so clock in/out can be placed exactly.
+    void setBlockTime(int64_t ns, int latencyFrames) { blockNs_ = ns; latencyFrames_ = latencyFrames; }
+    uint64_t sampleTime() const { return sampleTime_; }
+    // For tests: how many times a step has played notes.
+    uint32_t stepsTriggered() const { return stepsTriggered_; }
+    // For tests: voices currently sounding in a pool.
+    int activeVoices(bool live) const {
+        int n = 0;
+        for (auto& v : voices_) if (v.active() && v.livePool == live) ++n;
+        return n;
+    }
+    // Clock-out events produced by the last render(): t = engine sample.
+    bool popClockOut(Cmd& c) { return clockOut_.pop(c); }
 
     // ---- desktop renderer (same thread as render) ----
     void setParam(int id, float v) { applyParam(id, v); }
@@ -440,7 +484,8 @@ public:
         drainCommands();
         const Algorithm& alg = kAlgos[algorithm_];
         const int harmSet = std::min(kHarmSets - 1, (int)std::lround(p_[P_HARMONIC] * (kHarmSets - 1)));
-        const double samplesPerStep = sr_ * 60.0 / (double)p_[P_TEMPO] / 4.0;
+        // One 16th note in samples: from the external clock when following it, else the tempo.
+        const double samplesPerStep = (following() && spt_ > 0.0) ? spt_ * 6.0 : sr_ * 60.0 / (double)p_[P_TEMPO] / 4.0;
         const int gateSamples = std::max(1, (int)(samplesPerStep * 0.1 * std::pow(80.0, (double)p_[P_GATE])));
         static constexpr double kDelaySteps[4] = {1.0, 2.0, 3.0, 4.0};  // 1/16 1/8 d1/8 1/4
         const int dIdx = std::max(0, std::min(3, (int)std::lround(p_[P_DLY_TIME] * 3.f)));
@@ -451,30 +496,7 @@ public:
 
         for (int f = 0; f < frames; ++f) {
             // --- sequencer clock (sample-accurate) ---
-            if (playing_) {
-                // Internal clock counts samples; external MIDI clock fires steps
-                // from the ticks that arrived with this block.
-                bool fire = false;
-                if (extSync_) {
-                    if (f == 0 && pendingExtSteps_ > 0) { fire = true; pendingExtSteps_ = 0; }
-                } else if (stepCounter_ <= 0.0) {
-                    fire = true;
-                }
-                if (fire) {
-                    triggerStep(step_, gateSamples);
-                    playhead_.store(step_, std::memory_order_relaxed);
-                    stepCounter_ = extSync_ ? samplesPerStep : stepCounter_ + samplesPerStep;
-                    step_ = (step_ + 1) % kSteps;
-                }
-                stepCounter_ -= 1.0;
-                if (filterGate_ > 0 && --filterGate_ == 0 && liveHeld_ == 0) filterEnv_.gateOff();
-
-                const int cur = playhead_.load(std::memory_order_relaxed);
-                const double elapsed = std::max(0.0, samplesPerStep - stepCounter_);
-                const int sub = std::min(kTicksPerStep - 1, (int)(elapsed * kTicksPerStep / samplesPerStep));
-                const int tick = cur * kTicksPerStep + sub;
-                if (tick != lastTick_) { lastTick_ = tick; motionTick(tick); }
-            }
+            sequencerTick(f, samplesPerStep, gateSamples);
 
             // --- smoothed controls ---
             const float targetCut = activeLock_ >= 0.f ? activeLock_ : p_[P_CUTOFF];
@@ -544,6 +566,11 @@ public:
             out[2 * f + 1] = std::tanh(R * g);
         }
         sampleTime_ += (uint64_t)frames;
+        playingFlag_.store(playing_ || pendingStart_ || waitFirstTick_, std::memory_order_relaxed);
+        extSyncFlag_.store(playing_ && following(), std::memory_order_relaxed);
+        syncState_.store((following() ? 1 : 0) | (clockPresent() ? 2 : 0) | ((pendingStart_ || waitFirstTick_) ? 4 : 0),
+                         std::memory_order_relaxed);
+        if (!playing_) beat_.store(-1, std::memory_order_relaxed);
     }
 
 private:
@@ -564,20 +591,134 @@ private:
     }
 
     void clearPattern() {
-        for (int i = 0; i < kSteps; ++i) {
+        for (int i = 0; i < kMaxSteps; ++i) {
             for (int n = 0; n < kNotesPerStep; ++n) notes_[i][n] = -1;
             lock_[i] = -1.f;
+            chance_[i] = 100; ratchet_[i] = 1; tie_[i] = 1;
             for (int l = 0; l < kDrumLanes; ++l) drumOn_[l][i] = 0;
         }
     }
 
-    FmVoice& allocVoice() {
-        FmVoice* best = &voices_[0];
+    // Each pool (sequencer / live) has its own share of voices, so playing KEYS
+    // never cuts the pattern's notes and the pattern never cuts what you play.
+    // When a pool is full it takes back a note that is already fading out first,
+    // and only then the oldest note.
+    FmVoice& allocVoice(bool live = false) {
+        const int cap = live ? kLiveVoices : kSeqVoices;
+        int used = 0;
+        FmVoice* freeV = nullptr;
+        FmVoice* oldRel = nullptr;
+        FmVoice* oldest = nullptr;
         for (auto& v : voices_) {
-            if (!v.active()) return v;
-            if (v.order < best->order) best = &v;  // steal the oldest
+            if (!v.active()) { if (!freeV) freeV = &v; continue; }
+            if (v.livePool != live) continue;
+            ++used;
+            if (v.releasing() && (!oldRel || v.order < oldRel->order)) oldRel = &v;
+            if (!oldest || v.order < oldest->order) oldest = &v;
         }
-        return *best;
+        if (used < cap && freeV) return *freeV;
+        if (oldRel) return *oldRel;
+        if (oldest) return *oldest;
+        return freeV ? *freeV : voices_[0];
+    }
+
+    // ---- sequencer ----------------------------------------------------------
+    // phase16_ counts 16th notes since the pattern started; it advances by the
+    // tempo (or the external clock, which also nudges it into phase). Steps fire
+    // when it reaches their position, so timing is exact to the sample.
+    double rateMul() const { return kRateSixteenths[std::max(0, std::min(kRates - 1, (int)p_[P_RATE]))]; }
+    int patLen() const { return std::max(1, std::min(kMaxSteps, (int)p_[P_PAT_LEN])); }
+    double swingShift(int64_t k) const {
+        return (k & 1) ? (p_[P_SWING] - 0.5) * 2.0 * rateMul() : 0.0;  // every second step lands late
+    }
+    void resetPosition() {
+        phase16_ = 0.0; kAbs_ = 0; nextStepBase_ = 0.0; nextStepAt_ = 0.0;
+        curStep_ = -1; ratchetLeft_ = 0; lastTick_ = -1; outTickPhase_ = 0.0;
+    }
+    double offsetSixteenths(double base16) const {
+        double samples = p_[P_SYNC_OFFSET] * 0.001 * sr_;
+        if (following()) samples -= latencyFrames_;  // play early by our own output delay
+        return samples / base16;
+    }
+
+    void sequencerTick(int f, double base16, int gateSamples) {
+        const uint64_t now = sampleTime_ + (uint64_t)f;
+        if (filterGate_ > 0 && --filterGate_ == 0 && liveHeld_ == 0) filterEnv_.gateOff();
+        if (!playing_) return;
+        phase16_ += 1.0 / base16;
+
+        // Clock out while Bergz is the master: 6 ticks per 16th (24 per quarter).
+        if (p_[P_CLOCK_OUT] > 0.5f && !following()) {
+            while (outTickPhase_ * (1.0 / 6.0) <= phase16_) {
+                clockOut_.push(Cmd{kClockTick, 0, 0, 0.f, (int64_t)now});
+                outTickPhase_ += 1.0;
+            }
+        }
+        beat_.store((int)(std::max(0.0, phase16_) / 4.0) % 4, std::memory_order_relaxed);
+
+        const double eff = phase16_ - offsetSixteenths(base16);
+        while (eff >= nextStepAt_) fireStep(eff, base16, gateSamples);
+
+        if (ratchetLeft_ > 0 && eff >= ratchetAt_) {
+            triggerStep(ratchetStep_, ratchetGate_);
+            --ratchetLeft_;
+            ratchetAt_ += ratchetInterval_;
+        }
+        if (curStep_ >= 0) {
+            const int sub = std::max(0, std::min(kTicksPerStep - 1, (int)((eff - curStepAt_) / rateMul() * kTicksPerStep)));
+            const int tick = curStep_ * kTicksPerStep + sub;
+            if (tick != lastTick_) { lastTick_ = tick; motionTick(tick); }
+        }
+    }
+
+    void fireStep(double eff, double base16, int gateSamples) {
+        const double mul = rateMul();
+        const int len = patLen();
+        const int idx = (int)(kAbs_ % len);
+        const bool late = eff - nextStepAt_ > 1.0;  // fell far behind (clock jump): skip, don't burst
+        curStep_ = idx;
+        curStepAt_ = nextStepAt_;
+        playhead_.store(idx, std::memory_order_relaxed);
+        if (!late && (chance_[idx] >= 100 || (int)(rand01() * 100.f) < chance_[idx])) {
+            const double stepSamples = mul * base16;
+            const int r = std::max(1, std::min(4, (int)ratchet_[idx]));
+            int gate;
+            if (tie_[idx] > 1) gate = (int)(stepSamples * tie_[idx] * 0.98);       // held across the next steps
+            else if (r > 1) gate = std::max(1, (int)(stepSamples / r * 0.6));      // short repeats
+            else gate = std::max(1, (int)(gateSamples * mul));
+            triggerStep(idx, gate);
+            ratchetLeft_ = r - 1;
+            if (r > 1) {
+                ratchetStep_ = idx; ratchetGate_ = gate;
+                ratchetInterval_ = mul / r; ratchetAt_ = curStepAt_ + ratchetInterval_;
+            }
+        } else {
+            ratchetLeft_ = 0;
+        }
+        ++kAbs_;
+        nextStepBase_ += mul;
+        nextStepAt_ = nextStepBase_ + swingShift(kAbs_);
+    }
+
+    float rand01() {
+        rng_ ^= rng_ << 13; rng_ ^= rng_ >> 17; rng_ ^= rng_ << 5;
+        return (rng_ & 0xFFFFFF) / 16777216.f;
+    }
+
+    void startPlaying(uint64_t atSample) {
+        playing_ = true;
+        resetPosition();
+        // if the start point was a moment ago (a clock tick in the past), catch up to now
+        const double base16 = (following() && spt_ > 0.0) ? spt_ * 6.0 : sr_ * 60.0 / (double)p_[P_TEMPO] / 4.0;
+        if (sampleTime_ > atSample) phase16_ = (double)(sampleTime_ - atSample) / base16;
+        if (p_[P_CLOCK_OUT] > 0.5f && !following()) clockOut_.push(Cmd{kClockStart, 0, 0, 0.f, (int64_t)atSample});
+    }
+
+    // ---- external clock -----------------------------------------------------
+    bool clockPresent() const { return lastClockAt_ > 0 && sampleTime_ - lastClockAt_ < (uint64_t)(sr_ * 0.5f); }
+    bool following() const {
+        const int mode = (int)p_[P_SYNC_MODE];
+        return mode == 2 || (mode == 0 && clockPresent());
     }
 
     void triggerStep(int i, int gateSamples) {
@@ -586,10 +727,10 @@ private:
         for (int n = 0; n < kNotesPerStep; ++n) {
             if (notes_[i][n] < 0) continue;
             const int note = std::max(0, std::min(127, notes_[i][n] + (int)p_[P_TRANSPOSE]));
-            allocVoice().noteOn(note, gateSamples, ++voiceOrder_);
+            allocVoice(false).noteOn(note, gateSamples, ++voiceOrder_);
             any = true;
         }
-        if (any) { filterEnv_.gateOn(); filterGate_ = gateSamples; recountLive(); }
+        if (any) { filterEnv_.gateOn(); filterGate_ = gateSamples; recountLive(); ++stepsTriggered_; }
         for (int l = 0; l < kDrumLanes; ++l)
             if (drumOn_[l][i]) drums_[l].trigger();
     }
@@ -621,6 +762,20 @@ private:
             p_[id] = std::fmax(40.f, std::fmin(240.f, v));
         } else if (id == P_TRANSPOSE) {
             p_[id] = std::round(std::fmax(-12.f, std::fmin(12.f, v)));
+        } else if (id == P_PAT_LEN) {
+            p_[id] = std::round(std::fmax(1.f, std::fmin((float)kMaxSteps, v)));
+        } else if (id == P_RATE) {
+            const float old = p_[id];
+            p_[id] = std::round(std::fmax(0.f, std::fmin((float)(kRates - 1), v)));
+            if (old != p_[id]) { nextStepBase_ = nextStepAt_ - swingShift(kAbs_); }  // keep going from here
+        } else if (id == P_SWING) {
+            p_[id] = std::fmax(0.5f, std::fmin(0.75f, v));
+        } else if (id == P_SYNC_MODE || id == P_START_Q) {
+            p_[id] = std::round(std::fmax(0.f, std::fmin(2.f, v)));
+        } else if (id == P_SYNC_OFFSET) {
+            p_[id] = std::round(std::fmax(-60.f, std::fmin(60.f, v)));
+        } else if (id == P_CLOCK_OUT) {
+            p_[id] = v > 0.5f ? 1.f : 0.f;
         } else {
             p_[id] = std::fmax(0.f, std::fmin(1.f, v));
             if (id >= P_ATTACK && id <= P_RELEASE) applyEnvelopes();
@@ -657,19 +812,34 @@ private:
             case CMD_PARAM: applyParam(c.a, c.v); break;
             case CMD_STEP_NOTE: {
                 const int slot = (int)c.v;
-                if (c.a >= 0 && c.a < kSteps && slot >= 0 && slot < kNotesPerStep) notes_[c.a][slot] = c.b;
+                if (c.a >= 0 && c.a < kMaxSteps && slot >= 0 && slot < kNotesPerStep) notes_[c.a][slot] = c.b;
                 break;
             }
-            case CMD_DRUM:
-                if (c.a >= 0 && c.a < kDrumLanes && c.b >= 0 && c.b < kSteps) drumOn_[c.a][c.b] = c.v > 0.5f;
+            case CMD_STEP_PROPS:
+                if (c.a >= 0 && c.a < kMaxSteps) {
+                    chance_[c.a] = (uint8_t)std::max(0, std::min(100, c.b & 0xFF));
+                    ratchet_[c.a] = (uint8_t)std::max(1, std::min(4, (c.b >> 8) & 0xFF));
+                    tie_[c.a] = (uint8_t)std::max(1, std::min(16, (c.b >> 16) & 0xFF));
+                }
                 break;
-            case CMD_LOCK: if (c.a >= 0 && c.a < kSteps) lock_[c.a] = c.v; break;
+            case CMD_DRUM:
+                if (c.a >= 0 && c.a < kDrumLanes && c.b >= 0 && c.b < kMaxSteps) drumOn_[c.a][c.b] = c.v > 0.5f;
+                break;
+            case CMD_LOCK: if (c.a >= 0 && c.a < kMaxSteps) lock_[c.a] = c.v; break;
             case CMD_PLAY:
-                playing_ = true; extSync_ = false; step_ = 0; stepCounter_ = 0.0; lastTick_ = -1;
+                if (playing_ || pendingStart_) break;
+                if (following()) {
+                    pendingStart_ = true;           // start on the next bar / beat / tick of the clock
+                } else {
+                    startPlaying(sampleTime_);
+                }
                 break;
             case CMD_STOP:
+                if (playing_ && p_[P_CLOCK_OUT] > 0.5f && !following())
+                    clockOut_.push(Cmd{kClockStop, 0, 0, 0.f, (int64_t)sampleTime_});
                 playing_ = false;
-                extSync_ = false;
+                pendingStart_ = false;
+                waitFirstTick_ = false;
                 for (auto& v : voices_) if (!v.live) { v.noteOff(); v.gateLeft = 0; }
                 filterEnv_.gateOff();
                 playhead_.store(-1, std::memory_order_relaxed);
@@ -686,7 +856,7 @@ private:
             case CMD_NOTE_ON: {
                 if (c.a < 0 || c.a > 127) break;
                 const float vel = 0.3f + 0.7f * std::fmax(0.f, std::fmin(1.f, c.v));
-                allocVoice().noteOn(c.a, 0, ++voiceOrder_, vel, true);
+                allocVoice(true).noteOn(c.a, 0, ++voiceOrder_, vel, true);
                 recountLive();
                 filterEnv_.gateOn();
                 filterGate_ = 0;
@@ -708,19 +878,25 @@ private:
                 break;
 
             case CMD_MIDI_START:
-                extSync_ = true; playing_ = true; step_ = 0; lastTick_ = -1;
-                waitFirstTick_ = true; clockTicks_ = 0; pendingExtSteps_ = 0;
+                if ((int)p_[P_SYNC_MODE] == 1) break;   // INT: ignore the host's transport
+                // The next clock tick is beat 1 of bar 1.
+                playing_ = false; pendingStart_ = false; waitFirstTick_ = true;
+                lastClockAt_ = std::max<uint64_t>(lastClockAt_, sampleTime_);
                 break;
             case CMD_MIDI_CONTINUE:
-                extSync_ = true; playing_ = true; waitFirstTick_ = false;
+                if ((int)p_[P_SYNC_MODE] == 1) break;
+                if (!playing_) { playing_ = true; playStartTick_ = tickCount_ - (int64_t)std::llround(phase16_ * 6.0); }
                 break;
             case CMD_MIDI_STOP:
+                if ((int)p_[P_SYNC_MODE] == 1) break;
                 applyCmd({CMD_STOP, 0, 0, 0.f});
                 break;
-            case CMD_MIDI_CLOCK: clockTick(); break;
+            case CMD_MIDI_CLOCK: clockTick(c.t); break;
         }
-        playingFlag_.store(playing_, std::memory_order_relaxed);
-        extSyncFlag_.store(extSync_ && playing_, std::memory_order_relaxed);
+        playingFlag_.store(playing_ || pendingStart_ || waitFirstTick_, std::memory_order_relaxed);
+        extSyncFlag_.store(playing_ && following(), std::memory_order_relaxed);
+        syncState_.store((following() ? 1 : 0) | (clockPresent() ? 2 : 0) | ((pendingStart_ || waitFirstTick_) ? 4 : 0),
+                         std::memory_order_relaxed);
     }
 
     // 24 ticks per quarter note: every 6 ticks is one 16th step. The tempo is
@@ -732,29 +908,57 @@ private:
         liveHeld_ = n;
     }
 
-    void clockTick() {
-        if (!extSync_ || !playing_) {
-            // Clock without Start: still follow the tempo for delay sync.
-            measureTempo();
+    // MIDI clock: 24 ticks per quarter note, 6 per 16th. Each tick carries the
+    // time it arrived, so it can be placed on our sample timeline exactly
+    // (audio blocks no longer add jitter). The tempo is a smoothed average of
+    // the tick spacing, and while playing the sequencer is nudged a little at
+    // every 16th towards where the clock says it should be.
+    void clockTick(int64_t tNs) {
+        double tickSample = (double)sampleTime_;
+        if (tNs > 0 && blockNs_ > 0) {
+            tickSample += (double)(tNs - blockNs_) * sr_ / 1e9;
+            tickSample = std::fmax((double)sampleTime_ - sr_ * 0.25, std::fmin((double)sampleTime_, tickSample));
+        }
+        lastClockAt_ = sampleTime_;
+        if (prevTickSample_ > 0.0) {
+            const double gap = tickSample - prevTickSample_;
+            if (gap > sr_ * 0.003 && gap < sr_ * 0.1) spt_ = spt_ > 0.0 ? spt_ + 0.06 * (gap - spt_) : gap;
+            else if (gap >= sr_ * 0.1) spt_ = 0.0;  // the clock paused: measure afresh
+        }
+        prevTickSample_ = tickSample;
+        ++tickCount_;
+        if (spt_ > 0.0 && tickCount_ % 24 == 0) {
+            p_[P_TEMPO] = (float)(std::round(60.0 * sr_ / (spt_ * 24.0) * 10.0) / 10.0);
+            mirror_[P_TEMPO].store(p_[P_TEMPO], std::memory_order_relaxed);
+        }
+        if (!following()) return;
+
+        const uint64_t at = (uint64_t)std::max(0.0, tickSample);
+        if (waitFirstTick_) {                     // first tick after MIDI Start = bar 1
+            waitFirstTick_ = false;
+            barTick_ = tickCount_;
+            playStartTick_ = tickCount_;
+            startPlaying(at);
             return;
         }
-        if (waitFirstTick_) { waitFirstTick_ = false; clockTicks_ = 0; pendingExtSteps_ = 1; measureTempo(); return; }
-        ++clockTicks_;
-        if (clockTicks_ % 6 == 0) ++pendingExtSteps_;
-        measureTempo();
-    }
-
-    void measureTempo() {
-        if (++tempoTicks_ < 24) return;
-        tempoTicks_ = 0;
-        if (lastQuarterTime_ > 0 && sampleTime_ > lastQuarterTime_) {
-            const double bpm = 60.0 * sr_ / (double)(sampleTime_ - lastQuarterTime_);
-            if (bpm > 30.0 && bpm < 300.0) {
-                p_[P_TEMPO] = (float)std::round(bpm * 10.0) / 10.f;
-                mirror_[P_TEMPO].store(p_[P_TEMPO], std::memory_order_relaxed);
+        if (pendingStart_) {                      // PLAY pressed while following the clock
+            const int64_t q = p_[P_START_Q] < 0.5f ? 96 : (p_[P_START_Q] < 1.5f ? 24 : 1);
+            if ((tickCount_ - barTick_) % q == 0) {
+                pendingStart_ = false;
+                playStartTick_ = tickCount_;
+                startPlaying(at);
+            }
+            return;
+        }
+        if (playing_ && spt_ > 0.0) {
+            const int64_t rel = tickCount_ - playStartTick_;
+            if (rel > 0 && rel % 6 == 0) {
+                const double base16 = spt_ * 6.0;
+                const double phaseAtTick = phase16_ - ((double)sampleTime_ - tickSample) / base16;
+                const double err = (double)rel / 6.0 - phaseAtTick;
+                phase16_ += std::fabs(err) > 2.0 ? err : 0.2 * err;
             }
         }
-        lastQuarterTime_ = sampleTime_;
     }
 
     void drainCommands() { Cmd c; while (queue_.pop(c)) applyCmd(c); }
@@ -784,13 +988,20 @@ private:
     Phaser phaser_;
 
     bool playing_ = false;
-    int step_ = 0;
-    double stepCounter_ = 0.0;
     float activeLock_ = -1.f;
+    // sequencer position
+    double phase16_ = 0.0, nextStepBase_ = 0.0, nextStepAt_ = 0.0, curStepAt_ = 0.0;
+    int64_t kAbs_ = 0;
+    int curStep_ = -1;
+    int ratchetLeft_ = 0, ratchetStep_ = 0, ratchetGate_ = 0;
+    double ratchetInterval_ = 0.0, ratchetAt_ = 0.0;
+    uint32_t rng_ = 0x9E3779B9u;
+    uint32_t stepsTriggered_ = 0;
 
-    int notes_[kSteps][kNotesPerStep]{};
-    float lock_[kSteps]{};
-    uint8_t drumOn_[kDrumLanes][kSteps]{};
+    int notes_[kMaxSteps][kNotesPerStep]{};
+    float lock_[kMaxSteps]{};
+    uint8_t chance_[kMaxSteps]{}, ratchet_[kMaxSteps]{}, tie_[kMaxSteps]{};
+    uint8_t drumOn_[kDrumLanes][kMaxSteps]{};
 
     bool recording_ = false;
     bool touched_[P_COUNT]{};
@@ -802,10 +1013,15 @@ private:
     // live MIDI + external clock
     int liveHeld_ = 0;
     float pitchBend_ = 1.f;
-    bool extSync_ = false, waitFirstTick_ = false;
-    int clockTicks_ = 0, pendingExtSteps_ = 0, tempoTicks_ = 0;
-    uint64_t sampleTime_ = 0, lastQuarterTime_ = 0;
+    bool waitFirstTick_ = false, pendingStart_ = false;
+    double spt_ = 0.0, prevTickSample_ = 0.0, outTickPhase_ = 0.0;
+    int64_t tickCount_ = 0, barTick_ = 0, playStartTick_ = 0;
+    uint64_t sampleTime_ = 0, lastClockAt_ = 0;
+    int64_t blockNs_ = 0;
+    int latencyFrames_ = 0;
+    SpscQueue<512> clockOut_;
     std::atomic<bool> playingFlag_{false}, extSyncFlag_{false};
+    std::atomic<int> syncState_{0}, beat_{-1};
 };
 
 }  // namespace bergz

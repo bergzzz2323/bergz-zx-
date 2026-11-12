@@ -1,6 +1,11 @@
 package com.bergz.zx700.ui
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.RowScope
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.border
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.clickable
@@ -103,7 +108,7 @@ fun PanelScreen(state: BergzState) {
     ) {
         Header(state)
         // row 1: display and the sound
-        Row(Modifier.fillMaxWidth().weight(112f), horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+        Row(Modifier.fillMaxWidth().weight(102f), horizontalArrangement = Arrangement.spacedBy(7.dp)) {
             ScrewPlate(Modifier.width(DISPLAY_W).fillMaxHeight()) { Display(state, Modifier.fillMaxSize()) }
             Section("SOUND · FM", Modifier.weight(3f).fillMaxHeight()) {
                 K(state, P.FM_DEPTH, Theme.AccentA); K(state, P.HARMONIC, Theme.AccentB); K(state, P.FEEDBACK, Theme.AccentB)
@@ -128,10 +133,10 @@ fun PanelScreen(state: BergzState) {
             }
             MorphSection(state, Modifier.weight(1f).fillMaxHeight().padding(end = camStrip))
         }
-        // row 3: transport and DATA for the left hand, the 16 steps beside them
-        Row(Modifier.fillMaxWidth().weight(116f), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        // row 3: transport and DATA for the left hand, the sequencer beside them
+        Row(Modifier.fillMaxWidth().weight(136f), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Transport(state, Modifier.fillMaxHeight())
-            Steps(state, Modifier.weight(1f).fillMaxHeight())
+            Sequencer(state, Modifier.weight(1f).fillMaxHeight())
         }
     }
     WalnutCheek(Modifier.width(CHEEK))
@@ -139,6 +144,9 @@ fun PanelScreen(state: BergzState) {
     if (state.fxSettingsOpen) FxSettings(state)
     if (state.browserOpen) PatchBrowser(state)
     if (state.keyPickerOpen) KeyPicker(state)
+    if (state.syncOpen) SyncPopup(state)
+    if (state.patternsOpen) PatternsPopup(state)
+    if (state.historyOpen) HistoryPopup(state)
     }
 }
 
@@ -268,7 +276,9 @@ private fun Header(state: BergzState) {
                 ),
             ),
         )
-        Spacer(Modifier.width(12.dp))
+        Spacer(Modifier.width(10.dp))
+        SyncPill(state)
+        Spacer(Modifier.width(10.dp))
         // MIDI: activity light + connected sources, then where the sound is going.
         LedLens(if (state.midiActive) Theme.AccentA else null, unlit = Theme.AccentAOff, diameter = 6.dp)
         Spacer(Modifier.width(4.dp))
@@ -330,7 +340,20 @@ private fun Display(state: BergzState, modifier: Modifier) {
                     fontSize = 16.sp, maxLines = 1,
                     modifier = Modifier.clickable { state.openKeyPicker() },
                 )
-                Text(if (state.externalSync) "EXT ${state.tempo} BPM" else "${state.tempo} BPM", style = amber, fontSize = 16.sp)
+                // Tap the BPM to let DATA change tempo (it lights up while armed).
+                val armed = state.tempoArmed
+                val bpmShape = RoundedCornerShape(2.dp)
+                Box(
+                    Modifier
+                        .let { if (armed) it.background(Theme.DisplayAmber, bpmShape) else it.border(1.dp, Theme.DisplayAmber.copy(alpha = 0.55f), bpmShape) }
+                        .clickable { state.toggleTempoArm() }
+                        .padding(horizontal = 4.dp),
+                ) {
+                    Text(
+                        if (state.following) "EXT ${state.tempo} BPM" else "${state.tempo} BPM",
+                        style = if (armed) amber.copy(color = Theme.Screen, shadow = null) else amber, fontSize = 16.sp,
+                    )
+                }
             }
         }
     }
@@ -451,10 +474,15 @@ private fun Transport(state: BergzState, modifier: Modifier) {
 }
 
 
+/**
+ * The sequencer: a strip of controls (STEPS/KEYS, pages or octave, step EDIT
+ * modes, PATT, UNDO) above 16 keys. In STEPS mode the keys show the page on
+ * screen; in KEYS mode they are a keyboard in the current scale.
+ */
 @Composable
-private fun Steps(state: BergzState, modifier: Modifier) {
+private fun Sequencer(state: BergzState, modifier: Modifier) {
     val shape = RoundedCornerShape(4.dp)
-    Row(
+    Column(
         modifier
             .background(Color.Black.copy(alpha = 0.25f), shape)
             .border(1.dp, Theme.Line, shape)
@@ -462,28 +490,329 @@ private fun Steps(state: BergzState, modifier: Modifier) {
                 drawRect(Brush.verticalGradient(listOf(Color.Black.copy(alpha = 0.5f), Color.Transparent), endY = 5.dp.toPx()))
             }
             .padding(horizontal = 8.dp, vertical = 4.dp),
-        horizontalArrangement = Arrangement.spacedBy(5.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp),
     ) {
-        for (i in 0 until NativeEngine.STEPS) {
-            val on = state.notes[i][0] >= 0
-            val chord = state.notes[i].count { it >= 0 }
-            val chordMark = if (chord > 1) "+" else ""
-            val ghost = state.ghosts[i]
-            val text = when {
-                on -> noteName(state.notes[i][0]) + chordMark
-                ghost[0] >= 0 -> noteName(ghost[0]) + if (ghost.count { it >= 0 } > 1) "+" else ""
-                else -> ""
+        SequencerStrip(state)
+        Row(Modifier.fillMaxWidth().weight(1f), horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+            if (state.keysMode) KeysRow(state) else StepsRow(state)
+        }
+    }
+}
+
+@Composable
+private fun SequencerStrip(state: BergzState) {
+    Row(Modifier.fillMaxWidth().height(22.dp), horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
+        Chip("STEPS", on = !state.keysMode) { state.setKeysMode(false) }
+        Chip("KEYS", on = state.keysMode) { state.setKeysMode(true) }
+        StripDivider()
+        if (state.keysMode) {
+            StripLabel("OCT")
+            Chip("−", Modifier.width(26.dp)) { state.shiftOctave(-1) }
+            Box(Modifier.width(24.dp), contentAlignment = Alignment.Center) {
+                Text("${state.keysOctave}", color = Theme.AccentB, fontSize = 14.sp, fontWeight = FontWeight.ExtraBold, fontFamily = PanelFonts.Condensed)
             }
-            StepKey(
-                number = i + 1,
-                ledColor = if (on) Theme.AccentB else null,
-                noteDim = !on && ghost[0] >= 0,
-                isPlayhead = state.playhead == i,
-                isSelected = state.selectedStep == i,
-                isBeat = i % 4 == 0,
-                noteText = text,
-                modifier = Modifier.weight(1f).fillMaxHeight(),
-            ) { state.stepPressed(i) }
+            Chip("+", Modifier.width(26.dp)) { state.shiftOctave(1) }
+            StripDivider()
+            Text(
+                "${state.keyScaleName} · PLAYS OVER THE PATTERN", color = Theme.AccentB, fontSize = 11.sp,
+                fontWeight = FontWeight.Bold, fontFamily = PanelFonts.Condensed, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f),
+            )
+            Text("REC LIT = WRITE TO STEPS", color = Theme.Dim, fontSize = 10.sp, fontWeight = FontWeight.Bold, fontFamily = PanelFonts.Condensed, maxLines = 1)
+        } else {
+            StripLabel("PAGE")
+            val playingPage = if (state.playhead >= 0) state.playhead / NativeEngine.STEPS else -1
+            for (p in 0 until 4) {
+                Box {
+                    Chip("${p + 1}", Modifier.width(22.dp), on = state.page == p, accent = Theme.AccentB, dim = p >= state.pages) { state.showPage(p) }
+                    if (p == playingPage && p != state.page) {
+                        // the page the playhead is on
+                        Box(Modifier.align(Alignment.BottomCenter).width(10.dp).height(2.dp).background(Theme.AccentA))
+                    }
+                }
+            }
+            StripDivider()
+            StripLabel("EDIT")
+            for (m in EditMode.values()) Chip(m.label, on = state.editMode == m) { state.setEditMode(m) }
+            Spacer(Modifier.weight(1f))
+            Chip("PATT ▦", on = state.currentSlot >= 0, accent = Theme.AccentB) { state.openPatterns() }
+            Chip("UNDO", dim = !state.canUndo, onLongPress = { state.historyOpen = true }) { state.undoPressed() }
+        }
+    }
+}
+
+@Composable
+private fun StripLabel(text: String) {
+    Text(text, color = Theme.Dim, fontSize = 9.5.sp, fontWeight = FontWeight.ExtraBold, fontFamily = PanelFonts.Condensed, letterSpacing = 1.sp)
+}
+
+@Composable
+private fun StripDivider() {
+    Box(Modifier.width(1.dp).height(16.dp).background(Theme.Line))
+}
+
+@Composable
+private fun RowScope.StepsRow(state: BergzState) {
+    val start = state.pageStart
+    for (i in 0 until NativeEngine.STEPS) {
+        val s = start + i
+        val on = state.notes[s][0] >= 0
+        val chord = state.notes[s].count { it >= 0 }
+        val chordMark = if (chord > 1) "+" else ""
+        val ghost = state.ghosts[s]
+        val props = state.stepProps[s]
+        val tiedFrom = if (!on) state.tiedFrom(s) else -1
+        val text = when {
+            on -> noteName(state.notes[s][0]) + chordMark
+            ghost[0] >= 0 -> noteName(ghost[0]) + if (ghost.count { it >= 0 } > 1) "+" else ""
+            else -> ""
+        }
+        val tieOut = (on && props.tie > 1) || (tiedFrom >= 0 && state.stepProps[tiedFrom].tie > s - tiedFrom + 1)
+        StepKey(
+            number = s + 1,
+            ledColor = when { on -> Theme.AccentB; tiedFrom >= 0 -> Theme.AccentB.copy(alpha = 0.35f); else -> null },
+            ledAlpha = if (on) props.chance / 100f else 1f,
+            noteDim = !on && ghost[0] >= 0,
+            isPlayhead = state.playhead == s,
+            isSelected = state.selectedStep == s,
+            isBeat = i % 4 == 0,
+            noteText = text,
+            topText = if (on && props.chance < 100) "${props.chance}%" else "",
+            ratchet = if (on) props.ratchet else 1,
+            tieIn = tiedFrom >= 0,
+            tieOut = tieOut && i < NativeEngine.STEPS - 1,
+            disabled = s >= state.patternLength,
+            modifier = Modifier.weight(1f).fillMaxHeight(),
+        ) { state.stepPressed(s) }
+    }
+}
+
+@Composable
+private fun RowScope.KeysRow(state: BergzState) {
+    for (i in 0 until NativeEngine.STEPS) {
+        val n = state.keyNote(i)
+        val isRoot = (n - state.key) % 12 == 0
+        StepKey(
+            number = i + 1,
+            ledColor = if (isRoot) Theme.AccentB.copy(alpha = 0.6f) else null,
+            isPlayhead = false,
+            pressed = n in state.heldKeys,
+            isSelected = false,
+            isBeat = isRoot,
+            noteText = noteName(n),
+            noteColor = if (isRoot) Theme.AccentB else null,
+            modifier = Modifier.weight(1f).fillMaxHeight(),
+            onUp = { state.keyUp(i) },
+        ) { state.keyDown(i) }
+    }
+}
+
+/** Header pill: what the clock is doing; tap for SYNC settings. */
+@Composable
+private fun SyncPill(state: BergzState) {
+    val shape = RoundedCornerShape(10.dp)
+    Row(
+        Modifier
+            .height(20.dp)
+            .background(Color(0xFF1B1E21), shape)
+            .border(1.dp, Color.Black, shape)
+            .clickable { state.openSync() }
+            .padding(horizontal = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        val lit = state.beat == 0 || (state.clockArriving && !state.playing)
+        LedLens(if (lit) Theme.AccentA else null, unlit = Theme.AccentAOff, diameter = 6.dp)
+        Spacer(Modifier.width(4.dp))
+        Text(
+            state.syncLabel, color = Theme.AccentB, fontSize = 10.sp, fontWeight = FontWeight.ExtraBold,
+            fontFamily = PanelFonts.Condensed, letterSpacing = 1.sp, maxLines = 1,
+        )
+    }
+}
+
+/** A pop-up panel with a title bar and DONE; the pattern keeps playing. */
+@Composable
+private fun PopupPanel(title: String, subtitle: String, onDone: () -> Unit, content: @Composable ColumnScope.() -> Unit) {
+    val shape = RoundedCornerShape(12.dp)
+    Overlay(onDismiss = onDone) {
+        Column(
+            Modifier
+                .fillMaxWidth(0.84f)
+                .shadow(16.dp, shape)
+                .background(Theme.Popup, shape)
+                .border(1.dp, Theme.Line, shape)
+                .clickable(remember { MutableInteractionSource() }, indication = null) { }
+                .padding(horizontal = 18.dp, vertical = 10.dp),
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    title, color = Theme.AccentB, fontSize = 15.sp, fontWeight = FontWeight.ExtraBold, fontFamily = PanelFonts.Condensed,
+                    letterSpacing = 2.sp, style = TextStyle(shadow = glow(Theme.AccentB)),
+                )
+                Spacer(Modifier.width(12.dp))
+                Text(
+                    subtitle, color = Theme.AccentA, fontSize = 12.sp, fontWeight = FontWeight.Bold, fontFamily = PanelFonts.Condensed,
+                    maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f),
+                )
+                Chip("DONE", Modifier.width(76.dp), on = true, accent = Theme.AccentB, height = 30.dp, fontSize = 13.sp) { onDone() }
+            }
+            Box(Modifier.fillMaxWidth().padding(vertical = 6.dp).height(1.dp).background(Theme.Line))
+            content()
+        }
+    }
+}
+
+@Composable
+private fun SettingRow(label: String, note: String, content: @Composable RowScope.() -> Unit) {
+    Row(Modifier.fillMaxWidth().padding(vertical = 5.dp), verticalAlignment = Alignment.CenterVertically) {
+        Text(
+            label, color = Theme.AccentA, fontSize = 12.sp, fontWeight = FontWeight.ExtraBold, fontFamily = PanelFonts.Condensed,
+            letterSpacing = 1.4.sp, modifier = Modifier.width(118.dp),
+        )
+        Row(Modifier.weight(1f), horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically, content = content)
+        Text(note, color = Theme.Muted, fontSize = 10.5.sp, fontFamily = PanelFonts.Condensed, modifier = Modifier.width(220.dp), maxLines = 2)
+    }
+}
+
+@Composable
+private fun ValueBox(text: String, width: Int = 80) {
+    Box(
+        Modifier.width(width.dp).height(30.dp).background(Color(0xFF07080A), RoundedCornerShape(4.dp)).border(1.dp, Theme.Line, RoundedCornerShape(4.dp)),
+        contentAlignment = Alignment.Center,
+    ) { Text(text, color = Theme.AccentB, fontSize = 17.sp, fontWeight = FontWeight.ExtraBold, fontFamily = PanelFonts.Condensed) }
+}
+
+@Composable
+private fun SyncPopup(state: BergzState) {
+    val sub = when {
+        state.following -> "EXT CLOCK · %.1f BPM".format(state.params[P.TEMPO])
+        state.clockArriving -> "CLOCK ARRIVING · BERGZ ON INTERNAL"
+        else -> "INTERNAL · ${state.tempo} BPM · NO CLOCK COMING IN"
+    }
+    PopupPanel("SYNC", sub, { state.closeSync() }) {
+        SettingRow("CLOCK SOURCE", "AUTO follows MIDI clock whenever it arrives and runs on its own tempo when it stops.") {
+            listOf("AUTO", "INT", "EXT").forEachIndexed { i, l -> Chip(l, on = state.syncMode == i, accent = Theme.AccentB, height = 30.dp, fontSize = 13.sp) { state.setSyncMode(i) } }
+        }
+        SettingRow("CLOCK OUT", "Sends clock, start and stop so other gear can follow Bergz.") {
+            Chip("OFF", on = !state.clockOut, accent = Theme.AccentB, height = 30.dp, fontSize = 13.sp) { state.setClockOut(false) }
+            Chip("ON", on = state.clockOut, accent = Theme.AccentB, height = 30.dp, fontSize = 13.sp) { state.setClockOut(true) }
+            Text(
+                if (state.clockTargets.isEmpty()) "NO MIDI DEVICE CONNECTED" else "→ " + state.clockTargets.joinToString(" · "),
+                color = Theme.AccentB, fontSize = 11.sp, fontWeight = FontWeight.Bold, fontFamily = PanelFonts.Condensed, maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+        SettingRow("SYNC OFFSET", "Nudge Bergz earlier (−) or later (+) until it locks with your DAW. The phone's own audio delay is already allowed for.") {
+            Chip("−", Modifier.width(36.dp), height = 30.dp, fontSize = 15.sp) { state.nudgeOffset(-1) }
+            ValueBox("${if (state.syncOffset > 0) "+" else if (state.syncOffset < 0) "−" else ""}${kotlin.math.abs(state.syncOffset)} ms", 92)
+            Chip("+", Modifier.width(36.dp), height = 30.dp, fontSize = 15.sp) { state.nudgeOffset(1) }
+        }
+        SettingRow("START", "When you press PLAY while following clock.") {
+            listOf("NEXT BAR", "NEXT BEAT", "NOW").forEachIndexed { i, l -> Chip(l, on = state.startQuant == i, accent = Theme.AccentB, height = 30.dp, fontSize = 13.sp) { state.setStartQuant(i) } }
+        }
+        SettingRow("BEAT", "Lights on every beat while playing.") {
+            for (b in 0 until 4) LedLens(if (state.beat == b) Theme.AccentA else null, unlit = Theme.AccentAOff, diameter = 12.dp)
+            Text(
+                if (state.following) "LOCKED TO CLOCK" else if (state.playing) "INTERNAL CLOCK" else "STOPPED",
+                color = Theme.Muted, fontSize = 11.sp, fontWeight = FontWeight.Bold, fontFamily = PanelFonts.Condensed,
+            )
+        }
+    }
+}
+
+@Composable
+private fun PatternsPopup(state: BergzState) {
+    PopupPanel("PATTERNS", "tap = load on the next loop · SHIFT + tap = save · hold = clear · kept when you close the app", { state.closePatterns() }) {
+        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            for (row in 0 until 2) {
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    for (c in 0 until 8) {
+                        val i = row * 8 + c
+                        val slot = state.slots.getOrNull(i)
+                        val cur = state.currentSlot == i
+                        val shape = RoundedCornerShape(5.dp)
+                        Column(
+                            Modifier
+                                .weight(1f)
+                                .height(42.dp)
+                                .background(if (cur) Theme.AccentB.copy(alpha = 0.18f) else Color(0xFF0E0F10), shape)
+                                .border(if (cur) 2.dp else 1.dp, if (cur) Theme.AccentB else Theme.Line, shape)
+                                .pointerInput(i) { detectTapGestures(onTap = { state.slotPressed(i) }, onLongPress = { state.clearSlot(i) }) },
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.Center,
+                        ) {
+                            Text("%02d".format(i + 1), color = if (slot != null) Theme.AccentA else Theme.Dim, fontSize = 10.sp, fontWeight = FontWeight.ExtraBold, fontFamily = PanelFonts.Condensed)
+                            Text(
+                                slot?.name ?: "EMPTY", color = if (slot != null) Theme.Text else Theme.Dim, fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold, fontFamily = PanelFonts.Condensed, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                            )
+                        }
+                    }
+                }
+            }
+        }
+        Spacer(Modifier.height(4.dp))
+        SettingRow("LENGTH", "Steps in the pattern. Pages 1–4 on the step strip.") {
+            NativeEngine.LENGTHS.forEach { l -> Chip("$l", on = state.patternLength == l, accent = Theme.AccentB, height = 30.dp, fontSize = 13.sp) { state.setLength(l) } }
+        }
+        SettingRow("RATE", "How long each step lasts. Slow it down for long pads.") {
+            NativeEngine.RATES.forEachIndexed { i, l -> Chip(l, on = state.rateIndex == i, accent = Theme.AccentB, height = 30.dp, fontSize = 13.sp) { state.setRate(i) } }
+        }
+        SettingRow("SWING", "50% is straight; up to 75% for a heavy shuffle.") {
+            Chip("−", Modifier.width(36.dp), height = 30.dp, fontSize = 15.sp) { state.nudgeSwing(-1) }
+            ValueBox("${state.swingPercent}%", 70)
+            Chip("+", Modifier.width(36.dp), height = 30.dp, fontSize = 15.sp) { state.nudgeSwing(1) }
+        }
+    }
+}
+
+@Composable
+private fun HistoryPopup(state: BergzState) {
+    PopupPanel("HISTORY", "tap a moment to go back to it · last 20 · cleared when the app closes", { state.historyOpen = false }) {
+        if (state.history.isEmpty()) {
+            Text("Nothing yet — every change you make shows up here.", color = Theme.Muted, fontSize = 12.sp, fontFamily = PanelFonts.Condensed)
+        }
+        // newest first, two columns
+        val items = state.history.indices.reversed().toList()
+        val rows = items.chunked(2)
+        Column(
+            Modifier.heightIn(max = 230.dp).verticalScroll(rememberScrollState()),
+            verticalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            for (pair in rows) {
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    for (idx in pair) {
+                        val m = state.history[idx]
+                        val cur = idx == state.historyPos
+                        val shape = RoundedCornerShape(5.dp)
+                        Row(
+                            Modifier
+                                .weight(1f)
+                                .height(32.dp)
+                                .background(if (cur) Theme.AccentB.copy(alpha = 0.16f) else Color(0xFF0E0F10), shape)
+                                .border(if (cur) 2.dp else 1.dp, if (cur) Theme.AccentB else Theme.Line, shape)
+                                .clickable { state.jumpTo(idx) }
+                                .padding(horizontal = 12.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Text(m.time, color = Theme.Muted, fontSize = 12.sp, fontWeight = FontWeight.Bold, fontFamily = PanelFonts.Condensed, modifier = Modifier.width(66.dp))
+                            Text(m.label, color = Theme.Text, fontSize = 13.sp, fontWeight = FontWeight.ExtraBold, fontFamily = PanelFonts.Condensed, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+                            Text(m.kind.uppercase(), color = Theme.AccentA, fontSize = 10.5.sp, fontWeight = FontWeight.Bold, fontFamily = PanelFonts.Condensed, letterSpacing = 1.sp)
+                            if (cur) Text("  ◀ NOW", color = Theme.AccentB, fontSize = 10.sp, fontWeight = FontWeight.ExtraBold, fontFamily = PanelFonts.Condensed)
+                        }
+                    }
+                    if (pair.size == 1) Spacer(Modifier.weight(1f))
+                }
+            }
+        }
+        Box(Modifier.fillMaxWidth().padding(vertical = 6.dp).height(1.dp).background(Theme.Line))
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            Chip("◀ UNDO", height = 30.dp, fontSize = 13.sp, dim = !state.canUndo) { state.undoPressed() }
+            Chip("REDO ▶", height = 30.dp, fontSize = 13.sp, dim = !state.canRedo) { state.redo() }
+            Text(
+                "Pattern and sound go back together. SHIFT + UNDO = REDO.",
+                color = Theme.Muted, fontSize = 11.sp, fontFamily = PanelFonts.Condensed,
+            )
         }
     }
 }

@@ -25,15 +25,29 @@ object NativeEngine {
         const val REV_ON = 30; const val DLY_ON = 31; const val PH_ON = 32
         // Sequencer transpose in semitones, -12..+12
         const val TRANSPOSE = 33
-        const val COUNT = 34
+        // Pattern + sync settings (real values)
+        const val PAT_LEN = 34      // 1..64 steps
+        const val RATE = 35         // index into RATES
+        const val SWING = 36        // 0.50..0.75
+        const val SYNC_MODE = 37    // 0 AUTO, 1 INT, 2 EXT
+        const val SYNC_OFFSET = 38  // ms -60..60
+        const val START_Q = 39      // 0 next bar, 1 next beat, 2 now
+        const val CLOCK_OUT = 40    // 0/1
+        const val COUNT = 41
         /** Params below this id can be motion-recorded and are part of scenes A/B. */
         const val MOTION_COUNT = TEMPO
         /** Presets store params below this id; FX panel settings and lights are kept across patches. */
         const val PRESET_COUNT = REV_TONE
     }
 
+    /** Steps on one page (and in a factory patch's pattern). */
     const val STEPS = 16
+    /** Longest pattern: 4 pages. */
+    const val MAX_STEPS = 64
     const val NOTES_PER_STEP = 4
+    val RATES = listOf("1/32", "1/16", "1/8", "1/4", "1/2", "1 BAR")
+    val LENGTHS = listOf(16, 32, 48, 64)
+    const val SYNC_AUTO = 0; const val SYNC_INT = 1; const val SYNC_EXT = 2
     const val ALGORITHMS = 4
 
     /** The three effects in panel order (delay first). Index = FxType in SynthCore.h. */
@@ -77,7 +91,14 @@ object NativeEngine {
     external fun nativeNoteOff(note: Int)
     external fun nativeAllNotesOff()
     external fun nativePitchBend(value: Float)
-    external fun nativeMidiClock()
+    /** [timestampNs]: when the clock byte arrived (System.nanoTime base), so it can be placed exactly. */
+    external fun nativeMidiClock(timestampNs: Long)
+    external fun nativeSetStepProps(step: Int, chance: Int, ratchet: Int, tie: Int)
+    /** bit 0 following external clock, bit 1 clock arriving, bit 2 waiting for the next bar/beat. */
+    external fun nativeSyncState(): Int
+    external fun nativeBeat(): Int
+    /** Fills (status, timeNs) pairs of MIDI clock-out events; returns the number of pairs. */
+    external fun nativePollClockOut(out: LongArray): Int
     external fun nativeMidiStart()
     external fun nativeMidiContinue()
     external fun nativeMidiStop()
