@@ -108,7 +108,7 @@ fun PanelScreen(state: BergzState) {
     ) {
         Header(state)
         // row 1: display and the sound
-        Row(Modifier.fillMaxWidth().weight(102f), horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+        Row(Modifier.fillMaxWidth().weight(110f), horizontalArrangement = Arrangement.spacedBy(7.dp)) {
             ScrewPlate(Modifier.width(DISPLAY_W).fillMaxHeight()) { Display(state, Modifier.fillMaxSize()) }
             Section("SOUND · FM", Modifier.weight(3f).fillMaxHeight()) {
                 K(state, P.FM_DEPTH, Theme.AccentA); K(state, P.HARMONIC, Theme.AccentB); K(state, P.FEEDBACK, Theme.AccentB)
@@ -134,7 +134,7 @@ fun PanelScreen(state: BergzState) {
             MorphSection(state, Modifier.weight(1f).fillMaxHeight().padding(end = camStrip))
         }
         // row 3: transport and DATA for the left hand, the sequencer beside them
-        Row(Modifier.fillMaxWidth().weight(136f), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        Row(Modifier.fillMaxWidth().weight(130f), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Transport(state, Modifier.fillMaxHeight())
             Sequencer(state, Modifier.weight(1f).fillMaxHeight())
         }
@@ -301,21 +301,21 @@ private fun Header(state: BergzState) {
 }
 
 
-/** The amber display, set behind a dark bezel. */
+/**
+ * The amber display, set behind a dark bezel. Its four lines are sized from the
+ * height the panel gives it, so they always fit (patch, name, message, key + BPM).
+ */
 @Composable
 private fun Display(state: BergzState, modifier: Modifier) {
     val shape = RoundedCornerShape(4.dp)
-    val amber = TextStyle(
-        fontFamily = PanelFonts.Display, color = Theme.DisplayAmber,
-        shadow = Shadow(Theme.DisplayAmber.copy(alpha = 0.85f), blurRadius = 12f),
-    )
+    val density = LocalDensity.current
     Box(
         modifier
             .background(Theme.Bezel, shape)
             .border(1.dp, Color.White.copy(alpha = 0.06f), shape)
-            .padding(6.dp),
+            .padding(5.dp),
     ) {
-        Column(
+        BoxWithConstraints(
             Modifier
                 .fillMaxSize()
                 .background(Theme.Screen, RoundedCornerShape(2.dp))
@@ -323,36 +323,46 @@ private fun Display(state: BergzState, modifier: Modifier) {
                     // glass: dark inner edge
                     drawRect(Brush.verticalGradient(listOf(Color.Black.copy(alpha = 0.7f), Color.Transparent), endY = 10.dp.toPx()))
                 }
-                .padding(horizontal = 8.dp, vertical = 3.dp),
-            verticalArrangement = Arrangement.SpaceBetween,
+                .padding(horizontal = 8.dp, vertical = 2.dp),
         ) {
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                Text("${state.presetLabel}${if (state.edited) "*" else ""}", style = amber, fontSize = 16.sp, maxLines = 1)
-                val step = if (state.playhead >= 0) "%02d".format(state.playhead + 1) else "--"
-                Text("ALG ${(state.params[P.ALGORITHM] + 1).toInt()} · $step/16", style = amber, fontSize = 16.sp, maxLines = 1)
-            }
-            Text(state.presetName, style = amber, fontSize = 30.sp, maxLines = 1, overflow = TextOverflow.Clip)
-            Text(state.message, style = amber, fontSize = 16.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                Text(
-                    state.keyScaleName,
-                    style = amber.copy(color = Theme.DisplayAccent, shadow = Shadow(Theme.DisplayAccent.copy(alpha = 0.85f), blurRadius = 12f)),
-                    fontSize = 16.sp, maxLines = 1,
-                    modifier = Modifier.clickable { state.openKeyPicker() },
-                )
-                // Tap the BPM to let DATA change tempo (it lights up while armed).
-                val armed = state.tempoArmed
-                val bpmShape = RoundedCornerShape(2.dp)
-                Box(
-                    Modifier
-                        .let { if (armed) it.background(Theme.DisplayAmber, bpmShape) else it.border(1.dp, Theme.DisplayAmber.copy(alpha = 0.55f), bpmShape) }
-                        .clickable { state.toggleTempoArm() }
-                        .padding(horizontal = 4.dp),
-                ) {
+            // 3 small lines + 1 big line (1.8x) with a little air: about 5.2 small lines of height.
+            val smallDp = (maxHeight / 5.2f).coerceIn(9.dp, 16.dp)
+            val small = with(density) { smallDp.toSp() }
+            val big = with(density) { (smallDp * 1.8f).coerceAtMost(30.dp).toSp() }
+            val amber = TextStyle(
+                fontFamily = PanelFonts.Display, color = Theme.DisplayAmber, fontSize = small, lineHeight = small,
+                shadow = Shadow(Theme.DisplayAmber.copy(alpha = 0.85f), blurRadius = 12f),
+            )
+            Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.SpaceEvenly) {
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                    Text("${state.presetLabel}${if (state.edited) "*" else ""}", style = amber, maxLines = 1)
+                    val step = if (state.playhead >= 0) "%02d".format(state.playhead + 1) else "--"
+                    Text("ALG ${(state.params[P.ALGORITHM] + 1).toInt()} · $step/${state.patternLength}", style = amber, maxLines = 1)
+                }
+                Text(state.presetName, style = amber.copy(fontSize = big, lineHeight = big), maxLines = 1, overflow = TextOverflow.Clip)
+                Text(state.message, style = amber, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                     Text(
-                        if (state.following) "EXT ${state.tempo} BPM" else "${state.tempo} BPM",
-                        style = if (armed) amber.copy(color = Theme.Screen, shadow = null) else amber, fontSize = 16.sp,
+                        state.keyScaleName,
+                        style = amber.copy(color = Theme.DisplayAccent, shadow = Shadow(Theme.DisplayAccent.copy(alpha = 0.85f), blurRadius = 12f)),
+                        maxLines = 1, overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f, fill = false).clickable { state.openKeyPicker() },
                     )
+                    Spacer(Modifier.width(6.dp))
+                    // Tap the BPM to let DATA change tempo (it lights up while armed).
+                    val armed = state.tempoArmed
+                    val bpmShape = RoundedCornerShape(2.dp)
+                    Box(
+                        Modifier
+                            .let { if (armed) it.background(Theme.DisplayAmber, bpmShape) else it.border(1.dp, Theme.DisplayAmber.copy(alpha = 0.55f), bpmShape) }
+                            .clickable { state.toggleTempoArm() }
+                            .padding(horizontal = 4.dp),
+                    ) {
+                        Text(
+                            if (state.following) "EXT ${state.tempo} BPM" else "${state.tempo} BPM",
+                            style = if (armed) amber.copy(color = Theme.Screen, shadow = null) else amber, maxLines = 1,
+                        )
+                    }
                 }
             }
         }

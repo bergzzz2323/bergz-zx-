@@ -851,7 +851,7 @@ fun ScrewPlate(modifier: Modifier = Modifier, content: @Composable () -> Unit) {
                     drawLine(Color(0xFF0C0D0E), Offset(c.x - dx, c.y - dy), Offset(c.x + dx, c.y + dy), 1.5.dp.toPx())
                 }
             }
-            .padding(9.dp),
+            .padding(7.dp),
     ) { content() }
 }
 
