@@ -633,7 +633,7 @@ class BergzState(private val store: BergzStore = MemoryStore()) {
         return when (got.size) { 1 -> 0; 2 -> 1; 3 -> 2; else -> 3 }
     }
 
-    fun setEditMode(m: EditMode) {
+    fun chooseEditMode(m: EditMode) {
         editMode = m
         tempoArmed = false
         message = if (selectedStep >= 0) "STEP ${selectedStep + 1} · ${m.label} · TURN DATA" else "${m.label} · SELECT A STEP"
@@ -913,7 +913,7 @@ class BergzState(private val store: BergzStore = MemoryStore()) {
         message = if (keysMode) "KEYS · $keyScaleName · PLAYS OVER THE PATTERN" else "STEPS"
     }
 
-    fun setKeysMode(on: Boolean) { if (on != keysMode) toggleKeysMode() }
+    fun showKeys(on: Boolean) { if (on != keysMode) toggleKeysMode() }
 
     fun shiftOctave(by: Int) {
         keysOctave = (keysOctave + by).coerceIn(1, 6)

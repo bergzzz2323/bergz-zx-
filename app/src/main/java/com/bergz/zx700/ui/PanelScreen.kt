@@ -502,8 +502,8 @@ private fun Sequencer(state: BergzState, modifier: Modifier) {
 @Composable
 private fun SequencerStrip(state: BergzState) {
     Row(Modifier.fillMaxWidth().height(22.dp), horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
-        Chip("STEPS", on = !state.keysMode) { state.setKeysMode(false) }
-        Chip("KEYS", on = state.keysMode) { state.setKeysMode(true) }
+        Chip("STEPS", on = !state.keysMode) { state.showKeys(false) }
+        Chip("KEYS", on = state.keysMode) { state.showKeys(true) }
         StripDivider()
         if (state.keysMode) {
             StripLabel("OCT")
@@ -533,7 +533,7 @@ private fun SequencerStrip(state: BergzState) {
             }
             StripDivider()
             StripLabel("EDIT")
-            for (m in EditMode.values()) Chip(m.label, on = state.editMode == m) { state.setEditMode(m) }
+            for (m in EditMode.values()) Chip(m.label, on = state.editMode == m) { state.chooseEditMode(m) }
             Spacer(Modifier.weight(1f))
             Chip("PATT ▦", on = state.currentSlot >= 0, accent = Theme.AccentB) { state.openPatterns() }
             Chip("UNDO", dim = !state.canUndo, onLongPress = { state.historyOpen = true }) { state.undoPressed() }
